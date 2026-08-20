@@ -20,6 +20,7 @@ function formatSource(source?: string) {
   if (source === 'text-model') return '文本模型';
   if (source === 'google-image-model') return 'Google 生图模型';
   if (source === 'openai-compatible-image-model') return '生图模型';
+  if (source === 'bailian-token-plan-image-model') return '百炼 Token Plan 生图模型';
   return source;
 }
 

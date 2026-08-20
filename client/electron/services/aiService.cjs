@@ -1901,6 +1901,111 @@ async function generateGoogleImage(app, config, request) {
   }
 }
 
+function normalizeBailianImageSize(imageConfig) {
+  const size = String(imageConfig?.image_size || '').trim();
+  if (!size || size.toLowerCase() === 'auto') return '';
+  return size.replace(/x/gi, '*');
+}
+
+function createBailianImageRequestBody(prompt, imageConfig) {
+  const parameters = { prompt_extend: true };
+  const normalizedSize = normalizeBailianImageSize(imageConfig);
+  if (normalizedSize) parameters.size = normalizedSize;
+  return { model: imageConfig.model_name, input: { messages: [{ role: 'user', content: [{ text: prompt }] }] }, parameters };
+}
+
+function createBailianImageUrl(baseUrl) { return baseUrl + BAILIAN_IMAGE_ENDPOINT_PATH; }
+
+function extractBailianImageUrl(responseData) {
+  const content = Array.isArray(responseData?.output?.choices?.[0]?.message?.content)
+    ? responseData.output.choices[0].message.content : [];
+  return String(content.find((item) => item?.image)?.image || '').trim();
+}
+
+function getBailianImageFailureMessage(responseData, fallbackMessage) {
+  return responseData?.message || responseData?.output?.message || fallbackMessage;
+}
+
+async function requestBailianImageData(baseUrl, apiKey, requestBody, fallbackMessage, options = {}) {
+  let response = null;
+  try {
+    response = await fetch(createBailianImageUrl(baseUrl), {
+      method: 'POST', headers: createHeaders(apiKey), body: JSON.stringify(requestBody), signal: options.signal,
+    });
+  } catch (error) {
+    throw markAiRequestError(error, { retryable: true });
+  }
+  await ensureOk(response, fallbackMessage, { source: options.source || 'bailian-token-plan-image-model' });
+  try { return await response.json(); } catch (error) { throw markAiRequestError(error, { retryable: true }); }
+}
+
+async function testBailianImageModel(app, config) {
+  const imageConfig = config.image_model || {};
+  const meta = BAILIAN_IMAGE_PROVIDER_META;
+  let responseData = null;
+  let analyticsTracked = false;
+  if (!imageConfig.api_key) throw new Error('请先填写' + meta.label + ' API Key');
+  if (!imageConfig.model_name) throw new Error('请先填写' + meta.label + meta.modelLabel);
+  const baseUrl = requireBaseUrl(imageConfig.base_url, meta.label + ' Base URL 缺失，请重新选择服务商后保存配置');
+  const requestMode = normalizeImageRequestMode(imageConfig);
+  const requestId = createRequestId();
+  const logTitle = 'AI生图测试-' + meta.label;
+  const requestBody = createBailianImageRequestBody('大字报，内容是“易标AI老好了”', imageConfig);
+  const url = createBailianImageUrl(baseUrl);
+  try {
+    writeAiLog(app, config, { request_id: requestId, log_title: logTitle, type: 'image-test-pending', provider: meta.logProvider, request_mode: requestMode, url, request: requestBody, status: 'pending', created_at: new Date().toISOString() });
+    responseData = await runWithAiRetry(() => runWithOperationTimeout(
+      (signal) => requestBailianImageData(baseUrl, imageConfig.api_key, requestBody, meta.label + '生图测试失败', { signal }), AI_REQUEST_TIMEOUT_MS,
+    ));
+    trackAiRequest(app, config, { ai_request_type: 'image' });
+    analyticsTracked = true;
+    const imageUrl = extractBailianImageUrl(responseData);
+    if (!imageUrl) throw createAiResponseDataError(getBailianImageFailureMessage(responseData, meta.label + '生图测试未返回图片数据'), responseData);
+    writeAiLog(app, config, { request_id: requestId, log_title: logTitle, type: 'image-test', provider: meta.logProvider, request_mode: requestMode, request: requestBody, response: safeImageResponse(responseData), result: { image_url: imageUrl, mime_type: 'image/png' }, created_at: new Date().toISOString() });
+    return { success: true, message: '测试成功：已生成图片 ' + imageUrl, image_url: imageUrl, mime_type: 'image/png' };
+  } catch (error) {
+    if (!analyticsTracked) trackAiRequest(app, config, { ai_request_type: 'image' });
+    const errorMessage = error?.name === 'AbortError' ? IMAGE_MODEL_TEST_TIMEOUT_MESSAGE : error?.message || '生图模型测试失败';
+    writeAiLog(app, config, { request_id: requestId, log_title: logTitle, type: 'image-test-error', provider: meta.logProvider, request_mode: requestMode, request: requestBody, response: getAiErrorLogResponse(error, responseData ? safeImageResponse(responseData) : null), error: getAiErrorLogError(error, errorMessage), created_at: new Date().toISOString() });
+    const wrappedError = copyRawAiErrorResponse(error, new Error(errorMessage));
+    emitAiHttpErrorToWindows(wrappedError);
+    throw wrappedError;
+  }
+}
+
+async function generateBailianImage(app, config, request) {
+  const imageConfig = config.image_model || {};
+  const meta = BAILIAN_IMAGE_PROVIDER_META;
+  const requestId = createRequestId();
+  const logTitle = resolveAiLogTitle(request, request.title ? 'AI生图-' + request.title : 'AI生图');
+  const requestMode = normalizeImageRequestMode(imageConfig);
+  const requestBody = createBailianImageRequestBody(normalizeImagePrompt(request), imageConfig);
+  const baseUrl = requireBaseUrl(imageConfig.base_url, meta.label + ' Base URL 缺失，请重新选择服务商后保存配置');
+  const url = createBailianImageUrl(baseUrl);
+  let responseData = null;
+  let analyticsTracked = false;
+  try {
+    writeAiLog(app, config, { request_id: requestId, log_title: logTitle, type: 'image-pending', provider: meta.logProvider, request_mode: requestMode, url, request: requestBody, status: 'pending', created_at: new Date().toISOString() });
+    responseData = await runWithAiRetry(() => runWithOperationTimeout(
+      (signal) => requestBailianImageData(baseUrl, imageConfig.api_key, requestBody, meta.label + '生图失败', { signal, source: 'bailian-token-plan-image-model' }), AI_REQUEST_TIMEOUT_MS, request.signal,
+    ));
+    trackAiRequest(app, config, { ai_request_type: 'image' });
+    analyticsTracked = true;
+    const imageUrl = extractBailianImageUrl(responseData);
+    if (!imageUrl) throw createAiResponseDataError(getBailianImageFailureMessage(responseData, meta.label + '生图未返回图片数据'), responseData);
+    const image = await runWithOperationTimeout((signal) => downloadImage(imageUrl, { signal }), AI_REQUEST_TIMEOUT_MS, request.signal);
+    const saved = saveGeneratedImage(app, image);
+    writeAiLog(app, config, { request_id: requestId, log_title: logTitle, type: 'image', provider: meta.logProvider, request_mode: requestMode, request: requestBody, response: safeImageResponse(responseData), result: saved, created_at: new Date().toISOString() });
+    return { success: true, title: request.title || '', ...saved };
+  } catch (error) {
+    if (!analyticsTracked) { trackAiRequest(app, config, { ai_request_type: 'image' }); analyticsTracked = true; }
+    writeAiLog(app, config, { request_id: requestId, log_title: logTitle, type: 'image-error', provider: meta.logProvider, request_mode: requestMode, request: requestBody, response: getAiErrorLogResponse(error, responseData ? safeImageResponse(responseData) : null), error: getAiErrorLogError(error, error.message), created_at: new Date().toISOString() });
+    const finalError = markAiRequestError(error, { retryable: false });
+    emitAiHttpErrorToWindows(finalError);
+    throw finalError;
+  }
+}
+
 const COMFYUI_POLL_INTERVAL_MS = 2000;
 
 function sleepMs(ms) {
@@ -2387,6 +2492,10 @@ async function generateImageWithConfig(app, config, request) {
     return generateComfyUIImage(app, config, request);
   }
 
+  if (config.image_model?.provider === BAILIAN_IMAGE_PROVIDER) {
+    return generateBailianImage(app, config, request);
+  }
+
   throw new Error('当前生图服务商暂不支持正文配图');
 }
 
@@ -2548,6 +2657,10 @@ function createAiService({ app, configStore }) {
 
       if (trackedConfig.image_model?.provider === 'comfyui') {
         return testComfyUIImageModel(app, trackedConfig);
+      }
+
+      if (trackedConfig.image_model?.provider === BAILIAN_IMAGE_PROVIDER) {
+        return testBailianImageModel(app, trackedConfig);
       }
 
       throw new Error('当前服务商暂不支持测试');

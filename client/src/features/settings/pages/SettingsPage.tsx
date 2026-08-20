@@ -188,6 +188,7 @@ const imageProviders: Array<{ value: ImageModelProvider; label: string }> = [
   { value: 'jinlong', label: '金龙中转站【推荐】' },
   { value: 'volcengine', label: '火山方舟' },
   { value: 'google-ai-studio', label: 'Google AI Studio' },
+  { value: 'bailian-token-plan', label: '百炼 Token Plan' },
   { value: 'agnes', label: 'Agnes AI' },
   { value: 'custom', label: '自定义 OpenAI-like' },
   { value: 'comfyui', label: 'ComfyUI（本地/局域网）' },
@@ -294,6 +295,18 @@ const imageProviderDefaults: ImageModelProfiles = {
     tested_at: '',
     last_error: '',
   },
+  'bailian-token-plan': {
+    provider: 'bailian-token-plan',
+    base_url: 'https://token-plan.cn-beijing.maas.aliyuncs.com/api/v1',
+    api_key: '',
+    model_name: 'qwen-image-3.0-pro',
+    image_size: '1024x1024',
+    request_mode: 'normal',
+    concurrency_limit: DEFAULT_IMAGE_CONCURRENCY_LIMIT,
+    status: 'untested',
+    tested_at: '',
+    last_error: '',
+  },
   agnes: {
     provider: 'agnes',
     base_url: 'https://apihub.agnes-ai.com/v1',
@@ -339,6 +352,7 @@ const imageProviderApiKeyUrls: Record<ImageModelProvider, string> = {
   volcengine: 'https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey',
   'google-ai-studio': 'https://aistudio.google.com/api-keys',
   agnes: 'https://platform.agnes-ai.com/settings/apiKeys',
+  'bailian-token-plan': 'https://bailian.console.aliyun.com/cn-beijing?tab=plan#/efm/subscription/token-plan',
   custom: '',
   comfyui: '',
 };
@@ -348,6 +362,7 @@ const imageProviderLabels: Record<ImageModelProvider, string> = {
   volcengine: '火山方舟',
   'google-ai-studio': 'Google AI Studio',
   agnes: 'Agnes AI',
+  'bailian-token-plan': '百炼 Token Plan',
   custom: '自定义生图服务',
   comfyui: 'ComfyUI',
 };
@@ -356,6 +371,7 @@ function getImageBaseUrlDescription(provider: ImageModelProvider) {
   if (provider === 'jinlong') return '金龙中转站 OpenAI 兼容接口地址';
   if (provider === 'volcengine') return '火山方舟 OpenAI 兼容接口地址';
   if (provider === 'agnes') return 'Agnes AI OpenAI 兼容接口地址';
+  if (provider === 'bailian-token-plan') return '百炼 Token Plan 原生 DashScope 接口地址';
   if (provider === 'custom') return '填写兼容 OpenAI /images/generations 的接口地址';
   if (provider === 'comfyui') return 'ComfyUI 服务地址，例如 http://127.0.0.1:8188 或局域网地址';
   return 'Google Gemini API REST 地址';
@@ -365,6 +381,7 @@ function getImageApiKeyDescription(provider: ImageModelProvider) {
   if (provider === 'jinlong') return '用于调用金龙中转站图片生成 API';
   if (provider === 'volcengine') return '用于调用火山方舟图片生成 API';
   if (provider === 'agnes') return '用于调用 Agnes AI 图片生成 API';
+  if (provider === 'bailian-token-plan') return '用于调用百炼 Token Plan 专属原生生图 API';
   if (provider === 'custom') return '用于调用自定义 OpenAI-like 生图接口';
   if (provider === 'comfyui') return 'ComfyUI 本地服务无需 API Key';
   return '用于调用 Google AI Studio Gemini API';
@@ -374,6 +391,7 @@ function getImageModelDescription(provider: ImageModelProvider) {
   if (provider === 'jinlong') return '填写金龙中转站已开通的生图模型名称';
   if (provider === 'volcengine') return '填写火山方舟控制台中已开通的模型或推理接入点 ID';
   if (provider === 'agnes') return '填写 Agnes AI 已开通的生图模型名称';
+  if (provider === 'bailian-token-plan') return '选择百炼 Token Plan 套餐已开通的生图模型';
   if (provider === 'custom') return '填写自定义接口支持的生图模型名称';
   if (provider === 'comfyui') return '可选：粘贴 ComfyUI「Save (API Format)」导出的工作流 JSON；留空则自动复用服务器上最近成功运行的文生图工作流';
   return '选择或填写支持图片生成的 Gemini 模型';
@@ -383,6 +401,7 @@ function getImageModelPlaceholder(provider: ImageModelProvider) {
   if (provider === 'jinlong') return '请输入已开通的生图模型名称';
   if (provider === 'volcengine') return '请输入已开通的模型或推理接入点 ID';
   if (provider === 'agnes') return '请输入 Agnes AI 生图模型名称';
+  if (provider === 'bailian-token-plan') return 'qwen-image-3.0-pro';
   if (provider === 'custom') return '请输入 OpenAI-like 生图模型名称';
   if (provider === 'comfyui') return '粘贴工作流 JSON（可选，留空自动探测）';
   return 'gemini-3.1-flash-image-preview';
@@ -1337,6 +1356,33 @@ function SettingsPage({ onDeveloperModeChange }: SettingsPageProps) {
         return;
       }
 
+      if (state.imageModel.provider === 'bailian-token-plan') {
+        const models = [
+          'qwen-image-3.0-pro',
+          'qwen-image-3.0',
+          'wan2.7-image-pro',
+          'wan2.7-image',
+        ];
+        setImageModels(models);
+        setState((prev) => ({
+          ...prev,
+          ...(() => {
+            const imageModel = models.includes(prev.imageModel.model_name)
+              ? prev.imageModel
+              : resetImageModelStatus({ ...prev.imageModel, model_name: models[0] });
+            return {
+              imageModel,
+              imageModelProfiles: {
+                ...prev.imageModelProfiles,
+                [prev.imageModel.provider]: imageProfileFromState(imageModel),
+              },
+            };
+          })(),
+        }));
+        showToast('已载入百炼 Token Plan 生图模型', 'success');
+        return;
+      }
+
       if (state.imageModel.provider === 'google-ai-studio') {
         const models = [
           'gemini-3.1-flash-image-preview',
@@ -2032,11 +2078,13 @@ function SettingsPage({ onDeveloperModeChange }: SettingsPageProps) {
                   ? '使用 Google AI Studio 官方 imageSize 枚举'
                   : state.imageModel.provider === 'comfyui'
                     ? '尺寸会注入工作流的 Latent 节点（宽×高）'
-                    : state.imageModel.provider === 'agnes' && state.imageModel.model_name === 'agnes-image-2.1-flash'
-                      ? 'Agnes Image 2.1 Flash 使用 1K 至 4K 尺寸档位'
-                      : state.imageModel.provider === 'agnes'
-                        ? 'Agnes Image 2.0 Flash 使用官方支持的具体尺寸'
-                        : '使用 OpenAI Image API 官方常用尺寸枚举'}</span>
+                    : state.imageModel.provider === 'bailian-token-plan'
+                      ? '百炼原生同步请求 size，auto 时不传 size，x 会自动转为 *'
+                      : state.imageModel.provider === 'agnes' && state.imageModel.model_name === 'agnes-image-2.1-flash'
+                        ? 'Agnes Image 2.1 Flash 使用 1K 至 4K 尺寸档位'
+                        : state.imageModel.provider === 'agnes'
+                          ? 'Agnes Image 2.0 Flash 使用官方支持的具体尺寸'
+                          : '使用 OpenAI Image API 官方常用尺寸枚举'}</span>
               </div>
               <select
                 value={state.imageModel.image_size}
@@ -2088,7 +2136,9 @@ function SettingsPage({ onDeveloperModeChange }: SettingsPageProps) {
                 <strong>请求方式</strong>
                 <span>{state.imageModel.provider === 'agnes'
                   ? 'Agnes 生图接口使用普通请求'
-                  : '流式请求只影响后端调用方式，应用仍等待完整图片生成后继续流程'}</span>
+                  : state.imageModel.provider === 'bailian-token-plan'
+                    ? '百炼原生同步请求，流式选项不生效'
+                    : '流式请求只影响后端调用方式，应用仍等待完整图片生成后继续流程'}</span>
               </div>
               <select
                 value={state.imageModel.request_mode}

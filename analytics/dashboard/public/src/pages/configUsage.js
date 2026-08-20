@@ -16,7 +16,7 @@ function labelConfigValue(groupKey, value) {
       agnes: 'Agnes AI',
       custom: '自定义文本服务',
     },
-    imageProviders: { jinlong: '金龙中转站', volcengine: '火山方舟', 'google-ai-studio': 'Google AI Studio', agnes: 'Agnes AI', custom: '自定义生图服务' },
+    imageProviders: { jinlong: '金龙中转站', volcengine: '火山方舟', 'google-ai-studio': 'Google AI Studio', agnes: 'Agnes AI', 'bailian-token-plan': '百炼 Token Plan', custom: '自定义生图服务' },
     imageModelStatuses: { untested: '未测试', available: '可用', unavailable: '不可用' },
     bidAnalysisModes: { key: '只解析关键项', full: '完整解析' },
     outlineModes: {

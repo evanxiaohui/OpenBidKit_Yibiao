@@ -4,7 +4,7 @@ const { getConfigFilePath } = require('../utils/paths.cjs');
 const { createAnalyticsClientId } = require('../utils/machineIdentity.cjs');
 
 const textModelProviders = ['jinlong', 'volcengine', 'deepseek', 'agnes', 'custom'];
-const imageModelProviders = ['jinlong', 'volcengine', 'google-ai-studio', 'agnes', 'custom', 'comfyui'];
+const imageModelProviders = ['jinlong', 'volcengine', 'google-ai-studio', 'bailian-token-plan', 'agnes', 'custom', 'comfyui'];
 const aiRequestModes = ['normal', 'stream'];
 const updateChannels = ['github', 'cloudflare', 'atomgit'];
 const DEFAULT_TEXT_CONTEXT_LENGTH_LIMIT = 400000;
@@ -128,6 +128,18 @@ const defaultImageModelProfiles = {
     model_name: 'gemini-3.1-flash-image-preview',
     image_size: '1K',
     request_mode: 'stream',
+    concurrency_limit: DEFAULT_IMAGE_CONCURRENCY_LIMIT,
+    status: 'untested',
+    tested_at: '',
+    last_error: '',
+  },
+  'bailian-token-plan': {
+    provider: 'bailian-token-plan',
+    base_url: 'https://token-plan.cn-beijing.maas.aliyuncs.com/api/v1',
+    api_key: '',
+    model_name: 'qwen-image-3.0-pro',
+    image_size: '1024x1024',
+    request_mode: 'normal',
     concurrency_limit: DEFAULT_IMAGE_CONCURRENCY_LIMIT,
     status: 'untested',
     tested_at: '',
