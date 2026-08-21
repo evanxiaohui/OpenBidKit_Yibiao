@@ -3,9 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 import { dismissRemoteNotice, fetchRemoteNotice, hasDismissedRemoteNotice, reportRemoteNoticeDelivered, type RemoteNotice } from '../shared/remoteNotice';
 import { MarkdownFullscreenViewer, MarkdownRenderer, useToast } from '../shared/ui';
 import type { PluginUpdateInfo } from '../shared/types/ipc';
-import { hasPromptedUpdate, showUpdateReadyToast } from '../shared/updateToast';
 
-const updatePollIntervalMs = 30 * 60 * 1000;
+const backgroundPollIntervalMs = 30 * 60 * 1000;
 const noticeCloseDelaySeconds = 5;
 const noticeLogPrefix = '[remote-notice]';
 
@@ -21,7 +20,7 @@ interface UpdateNotifierProps {
 
 function UpdateNotifier({ noticeEnabled }: UpdateNotifierProps) {
   const { showToast, dismissToast } = useToast();
-  const updateCheckingRef = useRef(false);
+  const pluginCheckingRef = useRef(false);
   const pluginUpdateRunningRef = useRef(false);
   const activeNoticeIdRef = useRef('');
   const reportedNoticeIdsRef = useRef(new Set<string>());
@@ -134,27 +133,20 @@ function UpdateNotifier({ noticeEnabled }: UpdateNotifierProps) {
 
     const unsubscribePluginUpdates = window.yibiao?.onPluginUpdatesAvailable(promptPluginUpdates);
 
-    const checkUpdate = async () => {
-      if (updateCheckingRef.current) {
+    const checkPluginUpdates = async () => {
+      if (pluginCheckingRef.current) {
         return;
       }
-      updateCheckingRef.current = true;
+      pluginCheckingRef.current = true;
       try {
-        const result = await window.yibiao?.checkUpdate();
-        if (!result?.enabled) {
-          return;
+        const updates = await window.yibiao?.plugins.checkUpdates();
+        if (updates) {
+          promptPluginUpdates(updates);
         }
-        if (disposed || !result.updateAvailable || !result.downloaded || !result.version) {
-          return;
-        }
-        if (hasPromptedUpdate(result.version)) {
-          return;
-        }
-        showUpdateReadyToast(showToast, result.version);
       } catch {
-        // 自动检查失败不打扰用户，手动检查入口会展示错误。
+        // 插件更新检查失败不打扰用户。
       } finally {
-        updateCheckingRef.current = false;
+        pluginCheckingRef.current = false;
       }
     };
 
@@ -188,7 +180,7 @@ function UpdateNotifier({ noticeEnabled }: UpdateNotifierProps) {
     };
 
     const checkAll = () => {
-      void checkUpdate();
+      void checkPluginUpdates();
       void checkRemoteNotice();
     };
 
@@ -200,7 +192,7 @@ function UpdateNotifier({ noticeEnabled }: UpdateNotifierProps) {
     if (!disposed) {
       timer = window.setInterval(() => {
         checkAll();
-      }, updatePollIntervalMs);
+      }, backgroundPollIntervalMs);
     }
 
     return () => {

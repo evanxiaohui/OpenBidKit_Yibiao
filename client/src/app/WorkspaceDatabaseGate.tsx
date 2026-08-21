@@ -103,7 +103,7 @@ function WorkspaceDatabaseGate({ children }: WorkspaceDatabaseGateProps) {
           {showReleaseLink && (
             <div className="workspace-database-actions">
               <button type="button" className="primary-action" onClick={openReleasePage}>下载新版客户端</button>
-              <span>将打开当前自动更新渠道的新版下载地址，请下载并安装新版客户端后重试。</span>
+              <span>将打开当前更新渠道的新版下载地址，请下载并安装新版客户端后重试。</span>
             </div>
           )}
         </div>

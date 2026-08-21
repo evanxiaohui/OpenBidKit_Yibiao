@@ -800,7 +800,7 @@ function SettingsPage({ onDeveloperModeChange }: SettingsPageProps) {
       const result = await window.yibiao?.checkUpdate();
       if (!result?.enabled) {
         setUpdateStatus('disabled');
-        showToast('开发调试模式不执行自动更新', 'info');
+        showToast('开发调试模式不执行客户端更新', 'info');
         return;
       }
       if (result.failed) {
@@ -1617,8 +1617,8 @@ function SettingsPage({ onDeveloperModeChange }: SettingsPageProps) {
     if (updateStatus === 'downloading') return `正在下载 ${updatePercent}%`;
     if (updateStatus === 'downloaded') return updateVersion ? `新版本 ${updateVersion} 已准备好` : '更新已准备好';
     if (updateStatus === 'error') return `更新失败：${updateError || '未知错误'}`;
-    if (updateStatus === 'disabled') return '开发调试模式不执行自动更新';
-    return '启动后自动检查，每 30 分钟轮询';
+    if (updateStatus === 'disabled') return '开发调试模式不执行客户端更新';
+    return '可手动检查新版本';
   })();
   const licenseSourceLabel = getLicenseSourceLabel(licenseStatus);
   const currentImageSizeOptions = getImageSizeOptions(state.imageModel.provider, state.imageModel.model_name);
@@ -1679,8 +1679,8 @@ function SettingsPage({ onDeveloperModeChange }: SettingsPageProps) {
           <div className="settings-list">
             <label className="settings-row">
               <div className="settings-row-copy">
-                <strong>自动更新渠道</strong>
-                <span>{updateChannelOptions.find((option) => option.value === state.general.update_channel)?.description || '选择自动检查更新和下载客户端安装包的来源'}</span>
+                <strong>更新渠道</strong>
+                <span>{updateChannelOptions.find((option) => option.value === state.general.update_channel)?.description || '选择手动检查更新和下载客户端安装包的来源'}</span>
               </div>
               <select
                 value={state.general.update_channel}
@@ -2435,7 +2435,7 @@ function SettingsPage({ onDeveloperModeChange }: SettingsPageProps) {
           <div className="about-overview">
             <article className="about-update-card">
               <div className="about-card-head">
-                <span>自动更新</span>
+                <span>软件更新</span>
                 <strong>当前版本 {appVersion || '...'}</strong>
               </div>
               <p>{updateStatusText}</p>
