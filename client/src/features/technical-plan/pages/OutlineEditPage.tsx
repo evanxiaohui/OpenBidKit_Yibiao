@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, DragEvent } from 'react';
 import { trackConfigUsage } from '../../../shared/analytics/analytics';
 import { AppSwitch, ProgressBar, useToast } from '../../../shared/ui';
-import type { BackgroundTaskState, OutlineSelectionItem, SaveOutlineRequest, SaveOutlineSelectionRequest, TechnicalPlanWorkflowKind } from '../types';
+import type { BackgroundTaskState, OutlineSelectionItem, RemoteKnowledgeScope, SaveOutlineRequest, SaveOutlineSelectionRequest, TechnicalPlanWorkflowKind } from '../types';
 import type { KnowledgeBaseIndex, KnowledgeDocument } from '../../knowledge-base/types';
 import { OUTLINE_CONTENT_MODE_LABELS } from '../../../shared/types';
 import type { OutlineContentMode, OutlineData, OutlineExpansionMode, OutlineItem, OutlineMode, OutlineWordControlOptions } from '../../../shared/types';
@@ -11,6 +11,7 @@ import type { ExportFormatConfig } from '../../../shared/types/exportFormat';
 import { DEFAULT_EXPORT_FORMAT } from '../../../shared/types/exportFormat';
 import { formatOutlineTitle } from '../../../shared/utils/outlineNumbering';
 import OutlineSelectionDialog from '../components/OutlineSelectionDialog';
+import RemoteKnowledgePicker from '../components/RemoteKnowledgePicker';
 
 interface OutlineEditPageProps {
   workflowKind: TechnicalPlanWorkflowKind;
@@ -20,11 +21,12 @@ interface OutlineEditPageProps {
   outlineWordControlOptions: OutlineWordControlOptions;
   outlineWordControlSnapshot?: OutlineWordControlOptions;
   referenceKnowledgeDocumentIds: string[];
+  remoteKnowledgeScopes: RemoteKnowledgeScope[];
   outlineData: OutlineData | null;
   task?: BackgroundTaskState;
   contentTaskStatus?: BackgroundTaskState['status'];
   aiAdjustmentRunning?: boolean;
-  onOutlineConfigChange: (config: { referenceKnowledgeDocumentIds: string[]; outlineMode: OutlineMode; outlineExpansionMode: OutlineExpansionMode; wordControlOptions: OutlineWordControlOptions }) => Promise<void>;
+  onOutlineConfigChange: (config: { referenceKnowledgeDocumentIds: string[]; remoteKnowledgeScopes: RemoteKnowledgeScope[]; outlineMode: OutlineMode; outlineExpansionMode: OutlineExpansionMode; wordControlOptions: OutlineWordControlOptions }) => Promise<void>;
   onOutlineSaved: (request: SaveOutlineRequest) => Promise<void>;
   onOutlineSelectionSaved: (request: SaveOutlineSelectionRequest) => Promise<void>;
   onOpenBidTemplate?: () => Promise<void>;
@@ -341,6 +343,7 @@ function OutlineEditPage({
   outlineWordControlOptions,
   outlineWordControlSnapshot,
   referenceKnowledgeDocumentIds,
+  remoteKnowledgeScopes,
   outlineData,
   task,
   contentTaskStatus,
@@ -371,6 +374,8 @@ function OutlineEditPage({
   const [draftStrictSectionWords, setDraftStrictSectionWords] = useState(outlineWordControlOptions.strictSectionWords);
   const [savingOutlineConfig, setSavingOutlineConfig] = useState(false);
   const [knowledgeSearch, setKnowledgeSearch] = useState('');
+  const [knowledgeTab, setKnowledgeTab] = useState<'local' | 'remote'>('local');
+  const [draftRemoteKnowledgeScopes, setDraftRemoteKnowledgeScopes] = useState<RemoteKnowledgeScope[]>(remoteKnowledgeScopes);
   const [expandedKnowledgeFolderIds, setExpandedKnowledgeFolderIds] = useState<Set<string>>(new Set());
   const [knowledgeIndex, setKnowledgeIndex] = useState<KnowledgeBaseIndex>(emptyKnowledgeIndex);
   const [loadingKnowledge, setLoadingKnowledge] = useState(false);
@@ -520,10 +525,11 @@ function OutlineEditPage({
     setDraftOutlineMode(outlineMode === 'standalone-technical' ? 'standalone-technical' : 'response-file');
     setDraftOutlineExpansionMode(isExpansionWorkflow ? outlineExpansionMode : 'ai-complement');
     setDraftKnowledgeDocumentIds(referenceKnowledgeDocumentIds);
+    setDraftRemoteKnowledgeScopes(remoteKnowledgeScopes);
     initializeWordControlDraft();
     setKnowledgeSearch('');
     void loadKnowledgeIndex();
-  }, [generationDialogOpen, isExpansionWorkflow, outlineMode, outlineExpansionMode, outlineWordControlOptions, referenceKnowledgeDocumentIds]);
+  }, [generationDialogOpen, isExpansionWorkflow, outlineMode, outlineExpansionMode, outlineWordControlOptions, referenceKnowledgeDocumentIds, remoteKnowledgeScopes]);
 
   const loadKnowledgeIndex = async () => {
     try {
@@ -558,6 +564,7 @@ function OutlineEditPage({
     setDraftOutlineMode(outlineMode === 'standalone-technical' ? 'standalone-technical' : 'response-file');
     setDraftOutlineExpansionMode(isExpansionWorkflow ? outlineExpansionMode : 'ai-complement');
     setDraftKnowledgeDocumentIds(referenceKnowledgeDocumentIds);
+    setDraftRemoteKnowledgeScopes(remoteKnowledgeScopes);
     initializeWordControlDraft();
     setKnowledgeSearch('');
     setGenerationDialogOpen(true);
@@ -587,6 +594,7 @@ function OutlineEditPage({
       setSavingOutlineConfig(true);
       await onOutlineConfigChange({
         referenceKnowledgeDocumentIds: draftKnowledgeDocumentIds,
+        remoteKnowledgeScopes: draftRemoteKnowledgeScopes,
         outlineMode: isExpansionWorkflow ? 'aligned' : draftOutlineMode,
         outlineExpansionMode: isExpansionWorkflow ? draftOutlineExpansionMode : 'ai-complement',
         wordControlOptions,
@@ -621,6 +629,7 @@ function OutlineEditPage({
       const nextOutlineExpansionMode = isExpansionWorkflow ? draftOutlineExpansionMode : 'ai-complement';
       await onOutlineConfigChange({
         referenceKnowledgeDocumentIds: draftKnowledgeDocumentIds,
+        remoteKnowledgeScopes: draftRemoteKnowledgeScopes,
         outlineMode: nextOutlineMode,
         outlineExpansionMode: nextOutlineExpansionMode,
         wordControlOptions,
@@ -628,6 +637,7 @@ function OutlineEditPage({
       setGenerationDialogOpen(false);
       await window.yibiao?.tasks.startOutlineGeneration({
         reference_knowledge_document_ids: draftKnowledgeDocumentIds,
+        remote_knowledge_scopes: draftRemoteKnowledgeScopes,
         outline_mode: nextOutlineMode,
         outline_expansion_mode: nextOutlineExpansionMode,
         word_control_options: wordControlOptions,
@@ -1524,9 +1534,10 @@ function OutlineEditPage({
               <section className="outline-generation-config-section outline-knowledge-picker">
                 <div className="outline-generation-config-head">
                   <strong>参考知识库</strong>
-                  <span>已选择 {draftKnowledgeDocumentIds.length} 个文档</span>
+                  <span>本地 {draftKnowledgeDocumentIds.length} 个文档，远程 {draftRemoteKnowledgeScopes.filter((scope) => scope.mode === 'all').length} 个库 / {draftRemoteKnowledgeScopes.reduce((sum, scope) => sum + (scope.mode === 'documents' ? scope.documents.length : 0), 0)} 个文档</span>
                 </div>
-                {renderKnowledgePicker()}
+                <div className="outline-knowledge-tabs"><button type="button" className={knowledgeTab === 'local' ? 'is-active' : ''} onClick={() => setKnowledgeTab('local')}>本地知识</button><button type="button" className={knowledgeTab === 'remote' ? 'is-active' : ''} onClick={() => setKnowledgeTab('remote')}>远程知识</button></div>
+                {knowledgeTab === 'local' ? renderKnowledgePicker() : <RemoteKnowledgePicker scopes={draftRemoteKnowledgeScopes} disabled={knowledgePickingDisabled} onChange={setDraftRemoteKnowledgeScopes} />}
               </section>
             </div>
 

@@ -10,7 +10,7 @@ import { useTechnicalPlanWorkflow } from '../hooks/useTechnicalPlanWorkflow';
 import { bidAnalysisTasks, getBidAnalysisTasks, isMissingBidAnalysisResult } from '../services/bidAnalysisWorkflow';
 import { trackPageView } from '../../../shared/analytics/analytics';
 import { AppDialog, FloatingToolbar, ProgressBar, ToolbarArrowLeftIcon, ToolbarArrowRightIcon, ToolbarDocumentIcon, ToolbarSparkleIcon, useToast } from '../../../shared/ui';
-import type { BackgroundTaskState, BidAnalysisTasks, ContentGenerationOptions, GlobalFactGroupState, GlobalFactsMode, SaveOutlineRequest, SaveOutlineSelectionRequest, TechnicalPlanState, TechnicalPlanStep, TechnicalPlanWorkflowKind } from '../types';
+import type { BackgroundTaskState, BidAnalysisTasks, ContentGenerationOptions, GlobalFactGroupState, GlobalFactsMode, RemoteKnowledgeScope, SaveOutlineRequest, SaveOutlineSelectionRequest, TechnicalPlanState, TechnicalPlanStep, TechnicalPlanWorkflowKind } from '../types';
 import { DEFAULT_OUTLINE_WORD_CONTROL_OPTIONS } from '../../../shared/types';
 import type { OutlineData, OutlineItem, OutlineWordControlOptions, WordExportProgressEvent } from '../../../shared/types';
 import type { ExportFormatConfig, ExportTemplateRecord } from '../../../shared/types/exportFormat';
@@ -720,6 +720,7 @@ function TechnicalPlanHome({ workflowKind, registerLeaveGuard, onSectionChange }
             outlineWordControlSnapshot: hasOwnField(technicalPlan, 'outlineWordControlSnapshot') ? technicalPlan.outlineWordControlSnapshot : prev.outlineWordControlSnapshot,
             outlineGenerationTask: hasOwnField(technicalPlan, 'outlineGenerationTask') ? trimTaskLogs(technicalPlan.outlineGenerationTask) : prev.outlineGenerationTask,
             referenceKnowledgeDocumentIds: Array.isArray(technicalPlan.referenceKnowledgeDocumentIds) ? technicalPlan.referenceKnowledgeDocumentIds : prev.referenceKnowledgeDocumentIds,
+            remoteKnowledgeScopes: Array.isArray(technicalPlan.remoteKnowledgeScopes) ? technicalPlan.remoteKnowledgeScopes : prev.remoteKnowledgeScopes,
             globalFactsTask: hasOwnField(technicalPlan, 'globalFactsTask') ? trimTaskLogs(technicalPlan.globalFactsTask) : prev.globalFactsTask,
             globalFactsAdjustmentTask: hasOwnField(technicalPlan, 'globalFactsAdjustmentTask') ? trimTaskLogs(technicalPlan.globalFactsAdjustmentTask) : prev.globalFactsAdjustmentTask,
             globalFacts: hasOwnField(technicalPlan, 'globalFacts') ? (technicalPlan.globalFacts || []) : prev.globalFacts,
@@ -779,6 +780,7 @@ function TechnicalPlanHome({ workflowKind, registerLeaveGuard, onSectionChange }
             referenceKnowledgeDocumentIds: Array.isArray(technicalPlan.referenceKnowledgeDocumentIds)
               ? technicalPlan.referenceKnowledgeDocumentIds
               : prev.referenceKnowledgeDocumentIds,
+            remoteKnowledgeScopes: Array.isArray(technicalPlan.remoteKnowledgeScopes) ? technicalPlan.remoteKnowledgeScopes : prev.remoteKnowledgeScopes,
             outlineData: nextOutlineData,
             globalFactsTask: hasOwnField(technicalPlan, 'globalFactsTask') ? trimTaskLogs(technicalPlan.globalFactsTask) : prev.globalFactsTask,
             globalFactsAdjustmentTask: hasOwnField(technicalPlan, 'globalFactsAdjustmentTask') ? trimTaskLogs(technicalPlan.globalFactsAdjustmentTask) : prev.globalFactsAdjustmentTask,
@@ -857,6 +859,7 @@ function TechnicalPlanHome({ workflowKind, registerLeaveGuard, onSectionChange }
             referenceKnowledgeDocumentIds: Array.isArray(technicalPlan.referenceKnowledgeDocumentIds)
               ? technicalPlan.referenceKnowledgeDocumentIds
               : prev.referenceKnowledgeDocumentIds,
+            remoteKnowledgeScopes: Array.isArray(technicalPlan.remoteKnowledgeScopes) ? technicalPlan.remoteKnowledgeScopes : prev.remoteKnowledgeScopes,
             contentGenerationSections: nextSections,
             contentGenerationPlans: hasOwnField(technicalPlan, 'contentGenerationPlans') ? (technicalPlan.contentGenerationPlans || {}) : prev.contentGenerationPlans,
             contentIllustrationPlan: hasOwnField(technicalPlan, 'contentIllustrationPlan') ? technicalPlan.contentIllustrationPlan : prev.contentIllustrationPlan,
@@ -1144,6 +1147,7 @@ function TechnicalPlanHome({ workflowKind, registerLeaveGuard, onSectionChange }
 
   const saveOutlineConfig = async (config: {
     referenceKnowledgeDocumentIds: string[];
+    remoteKnowledgeScopes: RemoteKnowledgeScope[];
     outlineMode: TechnicalPlanState['outlineMode'];
     outlineExpansionMode: TechnicalPlanState['outlineExpansionMode'];
     wordControlOptions: OutlineWordControlOptions;
@@ -1155,6 +1159,7 @@ function TechnicalPlanHome({ workflowKind, registerLeaveGuard, onSectionChange }
       outlineExpansionMode: config.outlineExpansionMode,
       outlineWordControlOptions: config.wordControlOptions,
       referenceKnowledgeDocumentIds: config.referenceKnowledgeDocumentIds,
+      remoteKnowledgeScopes: config.remoteKnowledgeScopes,
     }));
   };
 
@@ -1362,6 +1367,7 @@ function TechnicalPlanHome({ workflowKind, registerLeaveGuard, onSectionChange }
           outlineWordControlOptions={state.outlineWordControlOptions}
           outlineWordControlSnapshot={state.outlineWordControlSnapshot}
           referenceKnowledgeDocumentIds={state.referenceKnowledgeDocumentIds}
+          remoteKnowledgeScopes={state.remoteKnowledgeScopes}
           outlineData={state.outlineData}
           task={state.outlineGenerationTask}
           contentTaskStatus={state.contentGenerationTask?.status}

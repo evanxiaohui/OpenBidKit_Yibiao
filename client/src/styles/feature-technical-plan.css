@@ -3842,3 +3842,10 @@
   font-size: clamp(16px, 2vw, 22px);
   font-weight: 900;
 }
+.outline-knowledge-tabs { display: flex; gap: 8px; margin-bottom: 10px; }
+.outline-knowledge-tabs button.is-active { font-weight: 700; border-bottom: 2px solid var(--yb-color-primary, #2563eb); }
+.remote-knowledge-base { border: 1px solid var(--yb-border, #ddd); padding: 10px; margin-bottom: 8px; }
+.remote-knowledge-base-head { display: flex; justify-content: space-between; gap: 8px; }
+.remote-knowledge-documents { display: grid; gap: 6px; margin-top: 8px; }
+.outline-knowledge-error { color: #b42318; display: flex; gap: 8px; align-items: center; }
+.outline-knowledge-stale { color: #b54708; }
