@@ -2,6 +2,7 @@ const { createRemoteKnowledgeClient } = require('./weKnoraClient.cjs');
 
 const INCOMPATIBLE_MESSAGE = '远程知识服务版本不受支持，请升级到 v0.7.2 或以上';
 const SEARCH_CONCURRENCY = 3;
+const DEFAULT_MATCH_COUNT = 8;
 
 function incompatibleError() {
   const error = new Error(INCOMPATIBLE_MESSAGE);
@@ -85,6 +86,11 @@ function buildSearchGroups(scopes) {
   return groups;
 }
 
+function resolveMatchCount(value) {
+  const count = Number(value);
+  return Number.isFinite(count) && count > 0 ? Math.floor(count) : DEFAULT_MATCH_COUNT;
+}
+
 function createRemoteKnowledgeService({ config, fetchImpl, timeoutMs, retryDelays, remoteKnowledgeClient } = {}) {
   const client = remoteKnowledgeClient || createRemoteKnowledgeClient({ config, fetchImpl, timeoutMs, retryDelays });
 
@@ -104,13 +110,13 @@ function createRemoteKnowledgeService({ config, fetchImpl, timeoutMs, retryDelay
 
   async function search({ query, scopes, matchCount, signal } = {}) {
     const groups = buildSearchGroups(scopes);
+    const resultLimit = resolveMatchCount(matchCount);
     const resultGroups = await runWithConcurrency(groups, SEARCH_CONCURRENCY, (group) => client.hybridSearch({
       query,
-      matchCount,
       signal,
       ...group,
     }));
-    return resultGroups.flat().map(mapSearchResult);
+    return resultGroups.flat().map(mapSearchResult).slice(0, resultLimit);
   }
 
   async function testConnection({ signal } = {}) {

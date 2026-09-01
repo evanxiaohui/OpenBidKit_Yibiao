@@ -71,8 +71,12 @@ test('splits whole-library and document-limited scopes to preserve mixed semanti
   assert.equal(Object.hasOwn(calls[0].body, 'knowledge_ids'), false);
   assert.deepEqual(calls[1].body.knowledge_base_ids, ['kb-b']);
   assert.deepEqual(calls[1].body.knowledge_ids, ['doc-1']);
-  assert.equal(calls[0].body.match_count, 8);
-  assert.equal(calls[1].body.match_count, 8);
+  assert.equal(calls[0].body.query, '施工组织设计');
+  assert.equal(calls[1].body.query, '施工组织设计');
+  assert.equal(Object.hasOwn(calls[0].body, 'query_text'), false);
+  assert.equal(Object.hasOwn(calls[1].body, 'query_text'), false);
+  assert.equal(Object.hasOwn(calls[0].body, 'match_count'), false);
+  assert.equal(Object.hasOwn(calls[1].body, 'match_count'), false);
 });
 
 test('maps returned chunks to generic remote knowledge search results', async () => {
@@ -114,6 +118,26 @@ test('returns no generic results when every scope has zero hits', async () => {
     scopes: [{ knowledgeBaseId: 'kb-a', mode: 'all', documents: [] }],
     matchCount: 8,
   }), []);
+});
+
+test('caps merged generic remote knowledge results to the requested match count', async () => {
+  const service = createServiceWithFetch(async () => jsonResponse({
+    success: true,
+    data: [
+      { id: 'chunk-1', knowledge_base_id: 'kb-a', knowledge_id: 'doc-1', content: '一', score: 0.9 },
+      { id: 'chunk-2', knowledge_base_id: 'kb-a', knowledge_id: 'doc-1', content: '二', score: 0.8 },
+      { id: 'chunk-3', knowledge_base_id: 'kb-a', knowledge_id: 'doc-1', content: '三', score: 0.7 },
+    ],
+  }));
+
+  const results = await service.search({
+    query: '施工组织设计',
+    scopes: [{ knowledgeBaseId: 'kb-a', mode: 'all', documents: [] }],
+    matchCount: 2,
+  });
+
+  assert.equal(results.length, 2);
+  assert.deepEqual(results.map((result) => result.chunkId), ['chunk-1', 'chunk-2']);
 });
 
 test('testConnection rejects a server without the v0.7.2 knowledge-base shape', async () => {

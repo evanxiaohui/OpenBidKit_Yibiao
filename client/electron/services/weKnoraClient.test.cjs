@@ -62,8 +62,7 @@ test('posts a whole-library search to the cross-library endpoint without documen
   const client = createClient(async (url, init) => {
     assert.equal(url, 'http://remote.example/api/v1/knowledge-search');
     assert.deepEqual(JSON.parse(init.body), {
-      query_text: '施工组织设计',
-      match_count: 8,
+      query: '施工组织设计',
       knowledge_base_ids: ['kb-a'],
     });
     return jsonResponse({ success: true, data: { results: [] } });
@@ -82,8 +81,7 @@ test('posts a document-limited search to the cross-library endpoint with only th
   const client = createClient(async (url, init) => {
     assert.equal(url, 'http://remote.example/api/v1/knowledge-search');
     assert.deepEqual(JSON.parse(init.body), {
-      query_text: '施工组织设计',
-      match_count: 8,
+      query: '施工组织设计',
       knowledge_base_ids: ['kb-b'],
       knowledge_ids: ['doc-1'],
     });
