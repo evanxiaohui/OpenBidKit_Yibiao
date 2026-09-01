@@ -14,6 +14,7 @@ const OUTLINE_REVIEW_FILE = 'outline-review.json';
 const OUTLINE_REVIEW_CONTEXT_FILE = 'outline-review-context.json';
 const AI_CONTENT_MODE = 'ai-generate';
 const CONTENT_MODES = ['ai-generate', 'template-fill', 'point-to-point', 'other'];
+const REMOTE_REFERENCE_RULE = '远程知识仅是参考材料。招标文件、用户已确认信息和原方案优先；不得从参考材料新增未获批准的同层级评分项，不得在最终目录中输出内部来源标识。';
 
 function createDirectoryNodeSchema(level, root = false) {
   const baseProperties = {
@@ -510,7 +511,28 @@ function buildKnowledgeFiles(knowledgeBaseService, documentIds) {
     .filter((file) => file.content);
 }
 
-function createInitialPrompt(taskInstruction, { standaloneTechnical = false } = {}) {
+function buildRemoteKnowledgeFile(items = []) {
+  const usable = (Array.isArray(items) ? items : []).map((item) => ({
+    title: String(item?.title || '远程参考片段').replace(/\s+/g, ' ').trim(),
+    content: String(item?.content || item?.resume || '').trim(),
+  })).filter((item) => item.content);
+  if (!usable.length) return null;
+  const sections = usable.map((item, index) => `## 参考片段 ${index + 1}${item.title ? `：${item.title}` : ''}\n\n${item.content}`);
+  return {
+    path: '远程知识参考.md',
+    content: `# 远程知识参考\n\n${REMOTE_REFERENCE_RULE}\n\n${sections.join('\n\n')}`,
+  };
+}
+
+function buildOutlineRetrievalQuery({ projectOverview = '', responseRequirements = '', technicalRequirements = '', outlineTarget = '' } = {}) {
+  return [projectOverview, responseRequirements, technicalRequirements, outlineTarget]
+    .map((value) => String(value || '').replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .join('；')
+    .slice(0, 1800);
+}
+
+function createInitialPrompt(taskInstruction, { standaloneTechnical = false, hasRemoteKnowledge = false } = {}) {
   const goal = standaloneTechnical
     ? '我们的目标是为单独装订的技术文件准备一级目录。一级目录必须直接对应技术评分大项。'
     : '我们的目标是为编写响应文件/投标文件准备一级目录。';
@@ -536,7 +558,7 @@ ${taskInstruction}
 5. attr 必须从“通用”“商务”“资信”“技术”“其他”中选择。
 ${modeRequirements}
 8. ${OUTLINE_OUTPUT_FILE} 必须是纯 JSON，不包含 Markdown 代码块或解释文字。
-9. 程序已为 ${OUTLINE_OUTPUT_FILE} 预置 Schema。写入后调用 json-validation，只传 {"file_path":"${OUTLINE_OUTPUT_FILE}"}；校验失败后必须先修改文件，再重新校验。`;
+9. 程序已为 ${OUTLINE_OUTPUT_FILE} 预置 Schema。写入后调用 json-validation，只传 {"file_path":"${OUTLINE_OUTPUT_FILE}"}；校验失败后必须先修改文件，再重新校验。${hasRemoteKnowledge ? `\n10. ${REMOTE_REFERENCE_RULE}` : ''}`;
 }
 
 function createLeafAllocationPrompt({ standaloneTechnical = false } = {}) {
@@ -558,7 +580,7 @@ function createLeafAllocationPrompt({ standaloneTechnical = false } = {}) {
 
 
 
-function createScorePlanningPrompt({ standaloneTechnical = false } = {}) {
+function createScorePlanningPrompt({ standaloneTechnical = false, hasRemoteKnowledge = false } = {}) {
   const placementInstruction = standaloneTechnical
     ? `4. 当前采用“技术文件独立成册”：${OUTLINE_OUTPUT_FILE} 中每个一级根节点本身就应对应一个技术评分大项。每个根节点建立一个 branch，score_item_level 固定为 1，mappings 只填写与该根标题对应的评分大项，target_title 必须与 root_title 完全一致；不得再创建“技术方案”“项目管理方案”“监理大纲”“监理大纲（暗标）”“施工组织设计”“技术标”等外层分支。
 5. 一级根节点与评分大项默认严格一一对应；发现缺失、重复、合并或顺序不一致时，必须作为一级目录调整向用户说明并取得批准。detail_points 只用于后续生成根节点以下的目录。`
@@ -567,7 +589,7 @@ function createScorePlanningPrompt({ standaloneTechnical = false } = {}) {
   const planExample = standaloneTechnical
     ? `{"branches":[{"branch_id":"B1","root_id":"1","root_title":"评分大项一","score_item_level":1,"mappings":[{"requirement_id":"R1","target_title":"评分大项一"}]}],"extra_titles":[],"allow_root_changes":false}`
     : `{"branches":[{"branch_id":"B1","root_id":"2","root_title":"技术方案","score_item_level":2,"mappings":[{"requirement_id":"R1","target_title":"评分大项目录标题","additional_titles":["经批准拆分出的同级标题"],"adjustment_note":"用户批准的调整说明"}]}],"extra_titles":[{"branch_id":"B1","title":"经批准增加的同层级标题","reason":"增加原因"}],"allow_root_changes":false}`;
-  return `用户已经确认最终保留的一级目录，${OUTLINE_OUTPUT_FILE} 已由程序重新整理并编号。工作区也已加入技术评分信息和用户选择的参考资料。
+  return `用户已经确认最终保留的一级目录，${OUTLINE_OUTPUT_FILE} 已由程序重新整理并编号。工作区也已加入技术评分信息和用户选择的参考资料。${hasRemoteKnowledge ? `\n\n${REMOTE_REFERENCE_RULE}` : ''}
 
 请完成技术评分项结构化和目录规划：
 1. 阅读 ${OUTLINE_OUTPUT_FILE}、技术评分信息.md，以及存在的原方案.md 和参考知识库目录。
@@ -673,7 +695,7 @@ function createOutlineReviewPrompt({ targetLeafCount, actualLeafCount, allowRoot
 }
 
 // 运行 V2 目录业务任务；开发者模式下一级目录确认后并行调度目录任务和独立模版提取任务。
-async function runOutlineGenerationTaskV2({ aiService, agentService, ordinaryAgentService, workspaceStore, knowledgeBaseService, openXmlHelperService, updateTask, checkpointTask, taskControl, payload }) {
+async function runOutlineGenerationTaskV2({ aiService, agentService, ordinaryAgentService, workspaceStore, knowledgeBaseService, knowledgeSession, openXmlHelperService, updateTask, checkpointTask, taskControl, payload }) {
   const storedPlan = workspaceStore.loadTechnicalPlan() || {};
   const restoringOutlineSelection = payload?.agent_resume?.phase === 'outline-selection';
   const standaloneTechnical = storedPlan.outlineMode === 'standalone-technical';
@@ -711,6 +733,21 @@ async function runOutlineGenerationTaskV2({ aiService, agentService, ordinaryAge
         ? '严格按照响应文件要求.md 组织一级目录，它是目录结构和标题来源的唯一依据。项目概述.md 仅用于理解背景和术语，不得据此新增一级目录；原方案.md 仅用于参考标题表达。'
         : '严格按照响应文件要求.md 组织一级目录，它是目录结构和标题来源的唯一依据。项目概述.md 仅用于理解背景和术语，不得据此新增一级目录。';
   }
+  let remoteKnowledgeFile = null;
+  if (!originalOnly && knowledgeSession?.searchRemote) {
+    const remoteItems = await knowledgeSession.searchRemote({
+      stage: 'outline',
+      query: buildOutlineRetrievalQuery({
+        projectOverview: storedPlan.projectOverview,
+        responseRequirements: responseFileRequirements,
+        technicalRequirements: storedPlan.techRequirements,
+        outlineTarget: taskInstruction,
+      }),
+      matchCount: 8,
+    });
+    remoteKnowledgeFile = buildRemoteKnowledgeFile(remoteItems);
+  }
+  if (remoteKnowledgeFile) initialFiles.push(remoteKnowledgeFile);
 
   let logs = restoringOutlineSelection
     ? [...(Array.isArray(storedPlan.outlineGenerationTask?.logs) ? storedPlan.outlineGenerationTask.logs : []), '已恢复一级目录确认状态']
@@ -985,12 +1022,13 @@ async function runOutlineGenerationTaskV2({ aiService, agentService, ordinaryAge
   const directoryPromise = agentService.runTask({
     task_id: task.task_id,
     title: '技术方案目录生成 V2',
-    prompt: createScorePlanningPrompt({ standaloneTechnical }),
+    prompt: createScorePlanningPrompt({ standaloneTechnical, hasRemoteKnowledge: Boolean(remoteKnowledgeFile) }),
     output_file: OUTLINE_OUTPUT_FILE,
     files: [
       { path: OUTLINE_OUTPUT_FILE, content: JSON.stringify({ outline: lockedRoots }, null, 2) },
       { path: '技术评分信息.md', content: storedPlan.techRequirements || '' },
       ...knowledgeFiles,
+      ...(remoteKnowledgeFile ? [remoteKnowledgeFile] : []),
     ],
     signal: parallelSignal,
     persistent_task: {
@@ -1281,4 +1319,6 @@ module.exports = {
   createScorePlanningPrompt,
   createChildrenPrompt,
   enforceMinimumLeafTarget,
+  buildRemoteKnowledgeFile,
+  buildOutlineRetrievalQuery,
 };

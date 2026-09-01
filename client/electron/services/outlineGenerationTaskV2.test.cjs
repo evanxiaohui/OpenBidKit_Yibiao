@@ -6,6 +6,7 @@ const {
   createScorePlanningPrompt,
   createChildrenPrompt,
   enforceMinimumLeafTarget,
+  buildRemoteKnowledgeFile,
 } = require('./outlineGenerationTaskV2.cjs');
 
 test('独立成册模式直接以技术评分大项作为一级目录', () => {
@@ -57,4 +58,15 @@ test('独立成册末级小节目标至少覆盖每个技术分支', () => {
     }),
     /最多容纳 5 个 AI 生成小节，但独立成册目录至少需要 6 个/,
   );
+});
+
+test('远程目录参考文件明确标记为不可信材料且不泄露内部来源标识到标题', () => {
+  const file = buildRemoteKnowledgeFile([
+    { title: '规范片段', content: '远程正文', knowledgeBaseId: 'kb-secret', knowledgeId: 'doc-secret', chunkId: 'chunk-secret' },
+  ]);
+  assert.equal(file.path, '远程知识参考.md');
+  assert.match(file.content, /仅是参考材料/);
+  assert.match(file.content, /规范片段/);
+  assert.match(file.content, /远程正文/);
+  assert.doesNotMatch(file.content, /kb-secret|doc-secret|chunk-secret/);
 });

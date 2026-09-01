@@ -11,6 +11,7 @@ const {
 } = require('./globalFactsTask.cjs');
 
 const GLOBAL_FACTS_OUTPUT_FILE = 'global-facts.json';
+const REMOTE_FACTS_REFERENCE_RULE = '远程知识仅是参考材料。项目概述、招标解析结果和已确认目录等本地权威材料优先；不得仅因参考材料新增全局事实大项，远程片段只能补充已有大项内容。';
 
 const GLOBAL_FACTS_JSON_SCHEMA = {
   type: 'object',
@@ -143,6 +144,36 @@ function formatKnowledgeItemFile(item) {
   return `# ${title}\n\n简介：${resume}\n\n${content}`.trim();
 }
 
+function buildGlobalFactsRetrievalTopics({ projectOverview = '', bidAnalysis = '', outline = [] } = {}) {
+  const raw = [projectOverview, bidAnalysis]
+    .concat((Array.isArray(outline) ? outline : []).map((item) => `${item?.title || ''} ${item?.description || ''}`))
+    .join('\n')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!raw) return [];
+  const parts = raw.split(/[。！？；;\n]+/).map((part) => part.trim()).filter(Boolean);
+  const topics = [];
+  for (const part of parts) {
+    if (!topics.includes(part)) topics.push(part);
+    if (topics.length >= 8) break;
+  }
+  if (!topics.length) topics.push(raw.slice(0, 240));
+  return topics.map((topic) => topic.slice(0, 240));
+}
+
+function buildRemoteKnowledgeFile(items = []) {
+  const usable = (Array.isArray(items) ? items : []).map((item) => ({
+    title: String(item?.title || '远程参考片段').replace(/\s+/g, ' ').trim(),
+    content: String(item?.content || item?.resume || '').trim(),
+  })).filter((item) => item.content);
+  if (!usable.length) return null;
+  const sections = usable.map((item, index) => `## 参考片段 ${index + 1}${item.title ? `：${item.title}` : ''}\n\n${item.content}`);
+  return {
+    path: '远程知识参考.md',
+    content: `# 远程知识参考\n\n${REMOTE_FACTS_REFERENCE_RULE}\n\n${sections.join('\n\n')}`,
+  };
+}
+
 function buildFileCatalog({ tenderPaths, isWorkingCopy, hasSectionHint, knowledgeCount, hasOriginalPlan }) {
   const lines = [];
   if (tenderPaths.length) {
@@ -207,7 +238,7 @@ function buildWorkPrinciples({ hasKnowledge, hasOriginalPlan }) {
   return principles.join('\n');
 }
 
-function createGlobalFactsPrompt({ fileCatalog, hasKnowledge, hasOriginalPlan, globalFactsMode }) {
+function createGlobalFactsPrompt({ fileCatalog, hasKnowledge, hasOriginalPlan, globalFactsMode, hasRemoteKnowledge = false }) {
   return `请只在当前工作目录内工作。已有材料足以判断时自主执行，不要调用 ask-user。
 
 任务：整理后续技术方案正文必须统一采用的全局事实变量，写入 ${GLOBAL_FACTS_OUTPUT_FILE}。
@@ -219,6 +250,7 @@ ${fileCatalog}
 
 工作原则：
 ${buildWorkPrinciples({ hasKnowledge, hasOriginalPlan })}
+${hasRemoteKnowledge ? `\n${REMOTE_FACTS_REFERENCE_RULE}` : ''}
 
 缺具体值时的写法：
 ${buildMissingValueRule(globalFactsMode)}
@@ -236,6 +268,7 @@ async function runGlobalFactsTaskV2({
   agentService,
   workspaceStore,
   knowledgeBaseService,
+  knowledgeSession,
   updateTask,
   checkpointTask,
   taskControl,
@@ -354,6 +387,23 @@ async function runGlobalFactsTaskV2({
     { path: '招标解析结果.md', content: formatBidAnalysisFactsForPrompt(storedPlan) },
     { path: '技术方案目录.md', content: formatOutlineForPrompt(outlineData.outline || []) },
   ];
+  const retrievalTopics = buildGlobalFactsRetrievalTopics({
+    projectOverview: storedPlan.projectOverview,
+    bidAnalysis: formatBidAnalysisFactsForPrompt(storedPlan),
+    outline: outlineData.outline || [],
+  });
+  let remoteKnowledgeFile = null;
+  if (knowledgeSession?.searchRemote && retrievalTopics.length) {
+    const remaining = Math.max(0, 8 - knowledgeItems.length);
+    if (remaining > 0) {
+      const remoteItems = await knowledgeSession.searchRemote({
+        stage: 'global-facts',
+        query: retrievalTopics.join('；').slice(0, 1800),
+        matchCount: remaining,
+      });
+      remoteKnowledgeFile = buildRemoteKnowledgeFile(remoteItems);
+    }
+  }
   if (sectionHint) {
     files.push({ path: '标段说明.md', content: sectionHint });
   }
@@ -363,6 +413,7 @@ async function runGlobalFactsTaskV2({
       content: formatKnowledgeItemFile(item),
     });
   });
+  if (remoteKnowledgeFile) files.push(remoteKnowledgeFile);
   if (originalPlanMarkdown) {
     files.push({ path: '原方案.md', content: originalPlanMarkdown });
   }
@@ -371,7 +422,7 @@ async function runGlobalFactsTaskV2({
     tenderPaths: tenderFiles.map((file) => file.path),
     isWorkingCopy: usingWorkingCopy,
     hasSectionHint: Boolean(sectionHint),
-    knowledgeCount: knowledgeItems.length,
+    knowledgeCount: knowledgeItems.length + (remoteKnowledgeFile ? 1 : 0),
     hasOriginalPlan: Boolean(originalPlanMarkdown),
   });
   files.push({
@@ -381,9 +432,10 @@ async function runGlobalFactsTaskV2({
 
   const prompt = createGlobalFactsPrompt({
     fileCatalog,
-    hasKnowledge: knowledgeItems.length > 0,
+    hasKnowledge: knowledgeItems.length > 0 || Boolean(remoteKnowledgeFile),
     hasOriginalPlan: Boolean(originalPlanMarkdown),
     globalFactsMode,
+    hasRemoteKnowledge: Boolean(remoteKnowledgeFile),
   });
 
   updateAgentState({ status: 'running', phase: 'global-facts', agent_connection: 'running', session_file: '' });
@@ -435,4 +487,6 @@ module.exports = {
   readJson,
   formatProgressTitle,
   runGlobalFactsTaskV2,
+  buildGlobalFactsRetrievalTopics,
+  buildRemoteKnowledgeFile,
 };
