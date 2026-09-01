@@ -37,6 +37,7 @@ function createKnowledgeReferenceService({ knowledgeBaseService, remoteKnowledge
       signal: signal || taskControl?.signal,
       remoteDisabledForRun: false,
       disposed: false,
+      pendingDecision: null,
     };
 
     session.loadLocalReferences = async (documentIds = session.localDocumentIds) => {
@@ -49,6 +50,14 @@ function createKnowledgeReferenceService({ knowledgeBaseService, remoteKnowledge
       if (session.remoteDisabledForRun || !remoteKnowledgeService || typeof remoteKnowledgeService.search !== 'function') return [];
       const limit = normalizeCount(matchCount);
       while (!session.remoteDisabledForRun && !session.disposed) {
+        if (session.pendingDecision) {
+          const action = await session.pendingDecision;
+          if (action === 'disable-and-continue') {
+            session.remoteDisabledForRun = true;
+            return [];
+          }
+          continue;
+        }
         try {
           const found = await remoteKnowledgeService.search({ query, scopes: session.remoteScopes, matchCount: limit, signal: session.signal });
           const unique = new Map();
@@ -59,8 +68,14 @@ function createKnowledgeReferenceService({ knowledgeBaseService, remoteKnowledge
           }
           return [...unique.values()].sort((a, b) => Number(b.score || 0) - Number(a.score || 0)).slice(0, limit);
         } catch (error) {
-          if (!remoteKnowledgeDecisionService) return [];
-          const action = await decisionService.waitForDecision({ taskId: session.taskId, workflow: session.workflow, stage, error, signal: session.signal });
+          const decisionPromise = decisionService.waitForDecision({ taskId: session.taskId, workflow: session.workflow, stage, error, signal: session.signal });
+          session.pendingDecision = decisionPromise;
+          let action;
+          try {
+            action = await decisionPromise;
+          } finally {
+            if (session.pendingDecision === decisionPromise) session.pendingDecision = null;
+          }
           if (action === 'disable-and-continue') {
             session.remoteDisabledForRun = true;
             return [];
@@ -73,14 +88,17 @@ function createKnowledgeReferenceService({ knowledgeBaseService, remoteKnowledge
     session.disableRemote = () => { session.remoteDisabledForRun = true; };
     session.isRemoteDisabled = () => session.remoteDisabledForRun;
     session.loadReferences = async ({ stage, query, matchCount = DEFAULT_MATCH_COUNT } = {}) => {
-      const local = await session.loadLocalReferences();
-      const remote = await session.searchRemote({ stage, query, matchCount });
-      return { local, remote, references: [...local, ...remote].slice(0, normalizeCount(matchCount)) };
+      const limit = normalizeCount(matchCount);
+      const allLocal = await session.loadLocalReferences();
+      const local = allLocal.slice(0, limit);
+      const remaining = Math.max(0, limit - local.length);
+      const remote = remaining > 0 ? await session.searchRemote({ stage, query, matchCount: remaining }) : [];
+      return { local, remote: remote.slice(0, remaining), references: [...local, ...remote].slice(0, limit) };
     };
     session.dispose = () => {
       if (session.disposed) return;
       session.disposed = true;
-      if (remoteKnowledgeDecisionService) decisionService.cancelTask(session.taskId, new Error('知识引用任务已释放'));
+      decisionService.cancelTask(session.taskId, new Error('知识引用任务已释放'));
     };
     return session;
   }

@@ -47,6 +47,7 @@ function createRemoteKnowledgeDecisionService({ emitDecision } = {}) {
   function waitForDecision(request = {}) {
     const taskId = String(request.taskId || '');
     if (disposed) return Promise.reject(new Error('远程知识决策服务已释放'));
+    if (request.signal?.aborted) return Promise.reject(createAbortError(request.signal.reason));
     if (disabledTasks.has(taskId)) return Promise.resolve('disable-and-continue');
 
     let entry = pendingByTask.get(taskId);
@@ -59,10 +60,6 @@ function createRemoteKnowledgeDecisionService({ emitDecision } = {}) {
 
     return new Promise((resolve, reject) => {
       const waiter = { resolve, reject, signal: request.signal, onAbort: null };
-      if (request.signal?.aborted) {
-        reject(createAbortError(request.signal.reason));
-        return;
-      }
       waiter.onAbort = () => {
         entry.waiters.delete(waiter);
         reject(createAbortError(request.signal.reason));

@@ -40,6 +40,24 @@ test('deduplicates remote chunks by source and preserves highest score ordering'
   ]);
 });
 
+test('blocks a second remote dispatch while the first task decision is pending', async () => {
+  let calls = 0;
+  let resolveDecision;
+  const decision = { waitForDecision: () => new Promise((resolve) => { resolveDecision = resolve; }), cancelTask() {} };
+  const session = createSession({
+    remoteKnowledgeDecisionService: decision,
+    remoteKnowledgeService: { search: async () => { calls += 1; throw new Error('down'); } },
+  });
+  const first = session.searchRemote({ stage: 'outline', query: 'a' });
+  await new Promise((resolve) => setImmediate(resolve));
+  const second = session.searchRemote({ stage: 'global-facts', query: 'b' });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(calls, 1);
+  resolveDecision('disable-and-continue');
+  await Promise.all([first, second]);
+  assert.equal(calls, 1);
+});
+
 test('passes matchCount eight and returns local-only fallback when remote is disabled', async () => {
   let received;
   const session = createSession({ remoteKnowledgeService: { search: async (request) => { received = request; return []; } } });
@@ -51,7 +69,10 @@ test('passes matchCount eight and returns local-only fallback when remote is dis
 });
 
 test('fails endpoint mismatch and falls back to local references', async () => {
-  const session = createSession({ remoteKnowledgeService: { search: async () => { throw Object.assign(new Error('版本不受支持'), { category: 'incompatible' }); } } });
+  const session = createSession({
+    remoteKnowledgeService: { search: async () => { throw Object.assign(new Error('版本不受支持'), { category: 'incompatible' }); } },
+    remoteKnowledgeDecisionService: { waitForDecision: async () => 'disable-and-continue', cancelTask() {} },
+  });
   const result = await session.loadReferences({ stage: 'outline', query: '项目' });
   assert.equal(result.local[0].id, 'local:local-doc:local-item');
   assert.deepEqual(result.remote, []);
