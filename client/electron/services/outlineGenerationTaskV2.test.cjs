@@ -7,6 +7,7 @@ const {
   createChildrenPrompt,
   enforceMinimumLeafTarget,
   buildRemoteKnowledgeFile,
+  runOutlineGenerationTaskV2,
 } = require('./outlineGenerationTaskV2.cjs');
 
 test('独立成册模式直接以技术评分大项作为一级目录', () => {
@@ -69,4 +70,122 @@ test('远程目录参考文件明确标记为不可信材料且不泄露内部�
   assert.match(file.content, /规范片段/);
   assert.match(file.content, /远程正文/);
   assert.doesNotMatch(file.content, /kb-secret|doc-secret|chunk-secret/);
+});
+
+test('original-only 真实目录任务不调用远程检索，也不注入远程文件', async () => {
+  const searches = [];
+  const runs = [];
+  const storedPlan = {
+    workflowKind: 'existing-plan-expansion',
+    originalPlanFile: { fileName: '原方案.docx' },
+    outlineExpansionMode: 'original-only',
+    tenderFile: { fileName: '招标.md' },
+    projectOverview: '智慧水务平台建设',
+    bidAnalysisTasks: { responseFileRequirements: { content: '技术方案目录要求' } },
+  };
+  const workspaceStore = {
+    loadTechnicalPlan: () => storedPlan,
+    readOriginalPlanMarkdown: () => '# 原方案目录',
+    hasBidTemplate: () => false,
+  };
+  const root = { id: '1', title: '原方案一级', attr: '技术' };
+  const runsOutput = [
+    { outline: [root] },
+    { outline: [{ ...root, content_mode: 'ai-generate' }] },
+  ];
+  const agentService = {
+    runTask: async (input) => {
+      runs.push(input);
+      return { output_content: JSON.stringify(runsOutput.shift()) };
+    },
+    updatePersistentTask() {},
+  };
+  const checkpointTask = (patch, data) => ({ task: {
+    task_id: 'task-outline-test',
+    stats: data || {},
+    logs: [],
+    ...patch,
+  } });
+  await runOutlineGenerationTaskV2({
+    aiService: {},
+    agentService,
+    ordinaryAgentService: {},
+    workspaceStore,
+    knowledgeBaseService: {},
+    knowledgeSession: { searchRemote: async (input) => { searches.push(input); return []; } },
+    openXmlHelperService: {},
+    updateTask: (patch) => ({ task_id: 'task-outline-test', stats: {}, logs: [], ...patch }),
+    checkpointTask,
+    taskControl: {
+      signal: new AbortController().signal,
+      waitForOutlineSelection: async () => ({ items: [root], selectedIds: ['1'] }),
+    },
+    payload: {},
+  });
+  assert.equal(searches.length, 0);
+  assert.equal(runs.length, 2);
+  assert.equal(runs[0].initial_stage, 'initial-outline');
+  assert.deepEqual(runs[0].files, [{ path: '原方案.md', content: '# 原方案目录' }]);
+  assert.equal(runs[0].files.some((file) => file.path === '远程知识参考.md'), false);
+  assert.equal(runs[1].files.some((file) => file.path === '远程知识参考.md'), false);
+});
+
+test('非 original-only 真实目录任务按 outline 阶段检索并注入远程参考文件', async () => {
+  const searches = [];
+  const runs = [];
+  const storedPlan = {
+    outlineMode: 'standalone-technical',
+    responseFileRequirements: '技术方案目录要求',
+    techRequirements: '平台总体设计评分项',
+    projectOverview: '智慧水务平台建设',
+  };
+  const workspaceStore = {
+    loadTechnicalPlan: () => storedPlan,
+    hasBidTemplate: () => false,
+  };
+  const root = { id: '1', title: '平台总体设计', attr: '技术' };
+  const outputs = [
+    { outline: [root] },
+    { outline: [{ ...root, content_mode: 'ai-generate' }] },
+  ];
+  const agentService = {
+    runTask: async (input) => {
+      runs.push(input);
+      return { output_content: JSON.stringify(outputs.shift()) };
+    },
+    updatePersistentTask() {},
+  };
+  const checkpointTask = (patch, data) => ({ task: {
+    task_id: 'task-outline-remote-test',
+    stats: data || {},
+    logs: [],
+    ...patch,
+  } });
+  await runOutlineGenerationTaskV2({
+    aiService: {},
+    agentService,
+    ordinaryAgentService: {},
+    workspaceStore,
+    knowledgeBaseService: {},
+    knowledgeSession: {
+      searchRemote: async (input) => {
+        searches.push(input);
+        return [{ title: '远程规范片段', content: '平台总体设计参考' }];
+      },
+    },
+    openXmlHelperService: {},
+    updateTask: (patch) => ({ task_id: 'task-outline-remote-test', stats: {}, logs: [], ...patch }),
+    checkpointTask,
+    taskControl: {
+      signal: new AbortController().signal,
+      waitForOutlineSelection: async () => ({ items: [root], selectedIds: ['1'] }),
+    },
+    payload: {},
+  });
+  assert.equal(searches.length, 1);
+  assert.equal(searches[0].stage, 'outline');
+  assert.ok(searches[0].query.length > 0);
+  assert.equal(searches[0].matchCount, 8);
+  assert.equal(runs.length, 2);
+  assert.ok(runs[1].files.some((file) => file.path === '远程知识参考.md'));
 });

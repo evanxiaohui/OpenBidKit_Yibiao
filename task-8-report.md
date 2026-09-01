@@ -18,3 +18,16 @@
 
 - 任务 8 未额外修改 `taskService.cjs`，因为当前工作树中 Task 7 已完成知识会话创建和 runner 传递链路。
 - `taskService.remoteKnowledge.test.cjs` 存在其他任务产生的未提交改动，本报告对应提交不包含该文件。
+
+## Review Fix
+
+- 修正全局事实材料目录：本地知识库条目与远程参考文件分别统计，远程文件显式列为 `远程知识参考.md`，不再虚构本地条目路径。
+- 在全局事实归一化后增加本地材料标题词 allowlist；远程检索存在时，无法由招标文件、项目概述、解析结果、目录、本地知识或原方案证明的 remote-only 大项会被过滤，若全部无法证明则拒绝保存。
+- 新增真实任务 runner 覆盖：`original-only` 不调用/注入远程知识；普通目录任务验证 `outline` 阶段 query 与 8 条预算；全局事实验证 `global-facts` 阶段、按本地条目扣减预算，以及远程 zero-hit 时保留本地材料。
+
+### Fix Verification
+
+- `node --test electron/services/*remoteKnowledge.test.cjs`：8 项通过。
+- `node --test electron/services/globalFactsTaskV2.remoteKnowledge.test.cjs electron/services/outlineGenerationTaskV2.test.cjs`：12 项通过。
+- `node --check electron/services/globalFactsTaskV2.cjs`、`node --check electron/services/outlineGenerationTaskV2.cjs`：通过。
+- `npm run build`：通过；仅有既有 chunk 体积警告。

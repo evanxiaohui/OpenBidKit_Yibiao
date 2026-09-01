@@ -174,7 +174,7 @@ function buildRemoteKnowledgeFile(items = []) {
   };
 }
 
-function buildFileCatalog({ tenderPaths, isWorkingCopy, hasSectionHint, knowledgeCount, hasOriginalPlan }) {
+function buildFileCatalog({ tenderPaths, isWorkingCopy, hasSectionHint, knowledgeCount, hasRemoteKnowledge = false, hasOriginalPlan }) {
   const lines = [];
   if (tenderPaths.length) {
     const listed = tenderPaths.join('、');
@@ -194,11 +194,54 @@ function buildFileCatalog({ tenderPaths, isWorkingCopy, hasSectionHint, knowledg
   if (knowledgeCount > 0) {
     lines.push('- 参考知识库/条目-*.md：补充已有大项的具体内容。');
   }
+  if (hasRemoteKnowledge) {
+    lines.push('- 远程知识参考.md：不可信远程参考片段，只能补充本地材料已证明存在的大项。');
+  }
   if (hasOriginalPlan) {
     lines.push('- 原方案.md：已有方案扩写底稿，补充已有大项的具体内容。');
   }
   lines.push('- 材料说明.md：本次实际提供的文件清单，与上述用途一致。');
   return lines.join('\n');
+}
+
+function extractFactTerms(value) {
+  const text = String(value || '').toLowerCase();
+  const terms = new Set();
+  for (const match of text.matchAll(/[\u4e00-\u9fff]{2,}|[a-z0-9][a-z0-9_-]{2,}/g)) {
+    const term = match[0];
+    terms.add(term);
+    if (/^[\u4e00-\u9fff]+$/.test(term)) {
+      for (let index = 0; index < term.length - 1; index += 1) {
+        terms.add(term.slice(index, index + 2));
+      }
+    }
+  }
+  return terms;
+}
+
+function buildGlobalFactGroupAllowlist({ tenderFiles = [], projectOverview = '', bidAnalysis = '', outline = [], knowledgeItems = [], originalPlanMarkdown = '' } = {}) {
+  const localText = [
+    projectOverview,
+    bidAnalysis,
+    originalPlanMarkdown,
+    ...(Array.isArray(tenderFiles) ? tenderFiles.map((file) => file?.content || file) : []),
+    ...(Array.isArray(outline) ? outline.map((item) => `${item?.title || ''} ${item?.description || ''}`) : []),
+    ...(Array.isArray(knowledgeItems) ? knowledgeItems.map((item) => `${item?.title || ''} ${item?.content || ''}`) : []),
+  ].join('\n');
+  return { terms: extractFactTerms(localText) };
+}
+
+function filterRemoteOnlyGlobalFacts(response, allowlist, { remoteKnowledge = false } = {}) {
+  if (!remoteKnowledge) return response;
+  const terms = allowlist?.terms instanceof Set ? allowlist.terms : new Set();
+  const groups = (response?.groups || []).filter((group) => {
+    const titleTerms = extractFactTerms(group?.title);
+    return [...titleTerms].some((term) => terms.has(term));
+  });
+  if (!groups.length && response?.groups?.length) {
+    throw new Error('远程知识返回的全局事实均无法由本地材料证明，已拒绝保存');
+  }
+  return { groups };
 }
 
 function buildWorkPrinciples({ hasKnowledge, hasOriginalPlan }) {
@@ -387,6 +430,14 @@ async function runGlobalFactsTaskV2({
     { path: '招标解析结果.md', content: formatBidAnalysisFactsForPrompt(storedPlan) },
     { path: '技术方案目录.md', content: formatOutlineForPrompt(outlineData.outline || []) },
   ];
+  const localFactAllowlist = buildGlobalFactGroupAllowlist({
+    tenderFiles,
+    projectOverview: storedPlan.projectOverview,
+    bidAnalysis: formatBidAnalysisFactsForPrompt(storedPlan),
+    outline: outlineData.outline || [],
+    knowledgeItems,
+    originalPlanMarkdown,
+  });
   const retrievalTopics = buildGlobalFactsRetrievalTopics({
     projectOverview: storedPlan.projectOverview,
     bidAnalysis: formatBidAnalysisFactsForPrompt(storedPlan),
@@ -422,7 +473,8 @@ async function runGlobalFactsTaskV2({
     tenderPaths: tenderFiles.map((file) => file.path),
     isWorkingCopy: usingWorkingCopy,
     hasSectionHint: Boolean(sectionHint),
-    knowledgeCount: knowledgeItems.length + (remoteKnowledgeFile ? 1 : 0),
+    knowledgeCount: knowledgeItems.length,
+    hasRemoteKnowledge: Boolean(remoteKnowledgeFile),
     hasOriginalPlan: Boolean(originalPlanMarkdown),
   });
   files.push({
@@ -463,7 +515,11 @@ async function runGlobalFactsTaskV2({
   });
 
   const generated = readJson(agentResult.output_content, GLOBAL_FACTS_OUTPUT_FILE);
-  const normalized = normalizeGlobalFactsResponse(generated);
+  const normalized = filterRemoteOnlyGlobalFacts(
+    normalizeGlobalFactsResponse(generated),
+    localFactAllowlist,
+    { remoteKnowledge: Boolean(remoteKnowledgeFile) },
+  );
   validateGlobalFactsResponse(normalized);
 
   publish(`全局事实变量整理完成：${normalized.groups.length} 个大项。`, 95);
@@ -489,4 +545,7 @@ module.exports = {
   runGlobalFactsTaskV2,
   buildGlobalFactsRetrievalTopics,
   buildRemoteKnowledgeFile,
+  buildFileCatalog,
+  buildGlobalFactGroupAllowlist,
+  filterRemoteOnlyGlobalFacts,
 };
