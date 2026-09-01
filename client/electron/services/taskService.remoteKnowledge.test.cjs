@@ -68,7 +68,7 @@ function makeService({ runner } = {}) {
     runResolve = input;
     await new Promise((resolve) => input.signal.addEventListener('abort', resolve, { once: true }));
   });
-  return { service, sessions, updates, getRunnerInput: () => runResolve, start: (payload = {}) => service.startOutlineGeneration(payload) };
+  return { service, sessions, updates, getState: () => state, getRunnerInput: () => runResolve, start: (payload = {}) => service.startOutlineGeneration(payload) };
 }
 
 test('creates an immutable knowledge session snapshot for technical-plan tasks', () => {
@@ -77,8 +77,8 @@ test('creates an immutable knowledge session snapshot for technical-plan tasks',
   assert.equal(harness.sessions.length, 1);
   assert.deepEqual(harness.sessions[0].localDocumentIds, ['local-1']);
   assert.equal(harness.sessions[0].remoteScopes[0].documents[0].knowledgeId, 'doc-1');
-  harness.sessions[0].remoteScopes[0].documents[0].knowledgeId = 'mutated';
-  assert.equal(harness.sessions[0].remoteScopes[0].documents[0].knowledgeId, 'mutated');
+  harness.getState().remoteKnowledgeScopes[0].documents[0].knowledgeId = 'mutated';
+  assert.equal(harness.sessions[0].remoteScopes[0].documents[0].knowledgeId, 'doc-1');
 });
 
 test('does not persist transient remote disable state and exposes decision fields only in snapshots', async () => {
