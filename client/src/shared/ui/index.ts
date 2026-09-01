@@ -36,6 +36,7 @@ export { default as OfflineLicenseActivationDialog } from './OfflineLicenseActiv
 export { AiHttpErrorDialogProvider } from './AiHttpErrorDialogProvider';
 export { AgentQuestionDialogProvider, useAutoAnswer } from './AgentQuestionDialogProvider';
 export { DonationPromptProvider } from './DonationPromptProvider';
+export { RemoteKnowledgeDecisionDialogProvider } from './RemoteKnowledgeDecisionDialogProvider';
 export {
   DocumentParseNoticeProvider,
   isLibreOfficeRequiredMessage,

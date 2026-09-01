@@ -218,6 +218,47 @@
   gap: 10px;
 }
 
+.remote-knowledge-decision-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.remote-knowledge-decision-actions button {
+  white-space: nowrap;
+}
+
+.remote-knowledge-decision-links {
+  display: flex;
+  gap: 16px;
+}
+
+.remote-knowledge-decision-details {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 8px 16px;
+  margin: 0;
+}
+
+.remote-knowledge-decision-details dt {
+  color: var(--yb-text-soft);
+}
+
+.remote-knowledge-decision-details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 620px) {
+  .remote-knowledge-decision-actions {
+    flex-direction: column-reverse;
+  }
+
+  .remote-knowledge-decision-actions button {
+    width: 100%;
+  }
+}
+
 /* 统一开关（shared/ui/AppSwitch.tsx，基于 Radix Switch）：
  * 替代原生 checkbox 拼装的 yb-switch-control 和技术方案自建的 content-generation-switch */
 .yb-switch {

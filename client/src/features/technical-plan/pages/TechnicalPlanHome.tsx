@@ -16,6 +16,7 @@ import type { OutlineData, OutlineItem, OutlineWordControlOptions, WordExportPro
 import type { ExportFormatConfig, ExportTemplateRecord } from '../../../shared/types/exportFormat';
 import { DEFAULT_EXPORT_FORMAT } from '../../../shared/types/exportFormat';
 import type { SectionId } from '../../../shared/types/navigation';
+import { showRemoteKnowledgeDecision } from '../../../shared/navigation/appNavigation';
 import { buildExportFormatCssVars } from '../../../shared/utils/exportFormatCss';
 import { countReadableWords } from '../../../shared/utils/wordCount';
 
@@ -1320,6 +1321,9 @@ function TechnicalPlanHome({ workflowKind, registerLeaveGuard, onSectionChange }
 
   return (
     <div className="page-stack technical-workbench">
+      {[state.outlineGenerationTask, state.globalFactsTask, state.contentGenerationTask].some((task) => task?.remote_knowledge_action_required) && (
+        <button type="button" className="secondary-action remote-knowledge-task-action" onClick={showRemoteKnowledgeDecision}>处理远程知识异常</button>
+      )}
       {state.step === 'document-analysis' && (
         <DocumentAnalysisPage
           workflowKind={workflowKind}

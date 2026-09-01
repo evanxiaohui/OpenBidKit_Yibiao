@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { trackConfigUsage } from '../../../shared/analytics/analytics';
 import { AppDialog, AppSwitch, DetailHelpLink, FloatingToolbar, InlineSpinner, InputWithAction, OfflineLicenseActivationDialog, useAutoAnswer, useToast } from '../../../shared/ui';
 import { showUpdateReadyToast } from '../../../shared/updateToast';
+import { consumePendingAppNavigation, onAppNavigation } from '../../../shared/navigation/appNavigation';
 import type { FloatingToolbarGroup } from '../../../shared/ui';
 import type { AgentModeScenariosConfig, AgentSelfCheckResult, AgentSelfCheckStepStatus, AiRequestMode, ClientConfig, ComponentsConfig, FileParserProvider, ImageModelConfig, ImageModelProfiles, ImageModelProvider, ImageModelRatio, ImageModelSize, ImageModelStatus, LicenseRuntimeStatus, TextModelConfig, TextModelProfiles, TextModelProvider, UpdateChannel } from '../../../shared/types';
 import type { SettingsPageState } from '../types';
@@ -640,6 +641,17 @@ interface SettingsPageProps {
 function SettingsPage({ onDeveloperModeChange }: SettingsPageProps) {
   const [state, setState] = useState<SettingsPageState>(initialState);
   const [activeTab, setActiveTab] = useState<SettingsTab>('general');
+  useEffect(() => {
+    const pending = consumePendingAppNavigation('settings');
+    if (pending?.settingsTab && settingsTabs.some((tab) => tab.id === pending.settingsTab)) {
+      setActiveTab(pending.settingsTab as SettingsTab);
+    }
+  }, []);
+  useEffect(() => onAppNavigation(({ section, settingsTab }) => {
+    if (section === 'settings' && settingsTab && settingsTabs.some((tab) => tab.id === settingsTab)) {
+      setActiveTab(settingsTab as SettingsTab);
+    }
+  }), []);
   const [savedConfig, setSavedConfig] = useState<ClientConfig | null>(null);
   const [textModels, setTextModels] = useState<string[]>([]);
   const [reasoningEfforts, setReasoningEfforts] = useState<string[]>([]);

@@ -106,6 +106,18 @@ export interface RemoteKnowledgeConnectionTestResult {
   knowledgeBaseCount: number;
 }
 
+export interface RemoteKnowledgeDecision {
+  decisionId: string;
+  taskId: string;
+  workflow: string;
+  stage: string;
+  category: string;
+  summary: string;
+  httpStatus?: number;
+  requestId?: string;
+  occurredAt: string;
+}
+
 export interface DeveloperTextTokenStats {
   request_count: number;
   input_tokens: number;
@@ -614,6 +626,9 @@ export interface YibiaoBridge {
     testConnection: (config: RemoteKnowledgeConnectionConfig) => Promise<RemoteKnowledgeConnectionTestResult>;
     listKnowledgeBases: () => Promise<RemoteKnowledgeBase[]>;
     listDocuments: (input: { knowledgeBaseId: string; page?: number; pageSize?: number }) => Promise<RemoteKnowledgeDocumentPage>;
+    getPendingDecision: () => Promise<RemoteKnowledgeDecision | null>;
+    resolveDecision: (input: { decisionId: string; action: 'retry' | 'disable-and-continue' }) => Promise<void>;
+    onDecision: (callback: (decision: RemoteKnowledgeDecision) => void) => () => void;
   };
   license: {
     getStatus: () => Promise<LicenseRuntimeStatus>;

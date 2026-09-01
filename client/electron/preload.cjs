@@ -76,6 +76,17 @@ const bridge = {
     testConnection: (config) => ipcRenderer.invoke('remote-knowledge:test-connection', config),
     listKnowledgeBases: () => ipcRenderer.invoke('remote-knowledge:list-knowledge-bases'),
     listDocuments: (input) => ipcRenderer.invoke('remote-knowledge:list-documents', input),
+    getPendingDecision: () => ipcRenderer.invoke('remote-knowledge:get-pending-decision'),
+    resolveDecision: (input) => ipcRenderer.invoke('remote-knowledge:resolve-decision', input),
+    onDecision: (callback) => {
+      const listener = (_event, payload) => callback(payload);
+      ipcRenderer.on('remote-knowledge:decision', listener);
+      ipcRenderer.send('remote-knowledge:subscribe-decisions');
+      return () => {
+        ipcRenderer.removeListener('remote-knowledge:decision', listener);
+        void ipcRenderer.invoke('remote-knowledge:unsubscribe-decisions').catch(() => undefined);
+      };
+    },
   },
   license: {
     getStatus: () => ipcRenderer.invoke('license:get-status'),

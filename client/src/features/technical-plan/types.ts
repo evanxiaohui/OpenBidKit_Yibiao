@@ -177,6 +177,8 @@ export interface BackgroundTaskState {
       ignored_section_count?: number;
     };
   };
+  remote_knowledge_action_required?: boolean;
+  remote_knowledge_decision_id?: string;
 }
 
 export interface BidAnalysisTaskState {

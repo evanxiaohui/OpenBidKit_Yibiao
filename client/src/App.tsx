@@ -6,6 +6,7 @@ import UpdateNotifier from './app/UpdateNotifier';
 import AppShell from './components/AppShell';
 import { trackAppOpen, trackConfigUsage, trackPageView } from './shared/analytics/analytics';
 import type { SectionId } from './shared/types/navigation';
+import { onAppNavigation } from './shared/navigation/appNavigation';
 
 function isDeveloperSection(section: SectionId) {
   return section.startsWith('developer-');
@@ -30,6 +31,8 @@ function App() {
       })
       .catch((error) => console.warn('读取开发者模式失败', error));
   }, []);
+
+  useEffect(() => onAppNavigation(({ section }) => { void requestSectionChange(section); }), []);
 
   useEffect(() => {
     trackPageView(activeSection);

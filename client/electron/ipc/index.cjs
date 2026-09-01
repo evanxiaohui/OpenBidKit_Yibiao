@@ -34,6 +34,8 @@ const { createKnowledgeBaseStore } = require('../services/knowledgeBaseStore.cjs
 const { createLicenseService } = require('../services/licenseService.cjs');
 const { createRejectionCheckStore } = require('../services/rejectionCheckStore.cjs');
 const { createRemoteKnowledgeService } = require('../services/remoteKnowledgeService.cjs');
+const { createRemoteKnowledgeDecisionService } = require('../services/remoteKnowledgeDecisionService.cjs');
+const { createKnowledgeReferenceService } = require('../services/knowledgeReferenceService.cjs');
 const { createSqliteDatabase } = require('../services/sqliteDatabase.cjs');
 const { createSystemFontService } = require('../services/systemFontService.cjs');
 const { clearOrphanedGeneratedImages, clearStalePiTaskArchives, runHistoricalStorageCleanup } = require('../services/storageCleanupService.cjs');
@@ -248,7 +250,7 @@ function registerWorkspaceDatabaseStatusIpc({ mainWindow }) {
   };
 }
 
-function registerWorkspaceDatabaseServices({ app, configStore, aiService, agentService, autoConfirmationService, fileService, openXmlHelperService, updateStatus }) {
+function registerWorkspaceDatabaseServices({ app, configStore, aiService, agentService, autoConfirmationService, fileService, openXmlHelperService, remoteKnowledgeService, remoteKnowledgeDecisionService, updateStatus }) {
   const sqliteDatabase = createSqliteDatabase(app, { onStatus: updateStatus });
   runHistoricalStorageCleanup({ app, db: sqliteDatabase.db, configStore, onStatus: updateStatus });
   clearStalePiTaskArchives(app);
@@ -256,13 +258,14 @@ function registerWorkspaceDatabaseServices({ app, configStore, aiService, agentS
   const taskLogStore = createTaskLogStore({ db: sqliteDatabase.db });
   const knowledgeBaseStore = createKnowledgeBaseStore({ app, db: sqliteDatabase.db });
   const knowledgeBaseService = createKnowledgeBaseService({ app, aiService, configStore, knowledgeBaseStore });
+  const knowledgeReferenceService = createKnowledgeReferenceService({ knowledgeBaseService, remoteKnowledgeService, remoteKnowledgeDecisionService });
   const technicalPlanStore = createTechnicalPlanStore({ app, db: sqliteDatabase.db, fileService, agentService, taskLogStore, configStore });
   const feasibilityReportStore = createFeasibilityReportStore({ app, db: sqliteDatabase.db, fileService, taskLogStore, agentService });
   const duplicateCheckStore = createDuplicateCheckStore({ app, db: sqliteDatabase.db, taskLogStore });
   const rejectionCheckStore = createRejectionCheckStore({ app, db: sqliteDatabase.db, fileService, technicalPlanStore, taskLogStore });
   const templateStore = createTemplateStore({ db: sqliteDatabase.db });
   const duplicateCheckService = createDuplicateCheckService({ app, configStore, workspaceStore: duplicateCheckStore });
-  const taskService = createTaskService({ aiService, agentService, autoConfirmationService, technicalPlanStore, rejectionCheckStore, duplicateCheckStore, feasibilityReportStore, knowledgeBaseService, duplicateCheckService, openXmlHelperService });
+  const taskService = createTaskService({ aiService, agentService, autoConfirmationService, technicalPlanStore, rejectionCheckStore, duplicateCheckStore, feasibilityReportStore, knowledgeBaseService, knowledgeReferenceService, remoteKnowledgeDecisionService, duplicateCheckService, openXmlHelperService });
   const agentWorkspaceService = createAgentWorkspaceService({ agentService, taskService, technicalPlanStore, feasibilityReportStore });
   agentWorkspaceServiceRef = agentWorkspaceService;
   technicalPlanStore.setAgentWorkspaceChangeListener(() => agentWorkspaceService.emitWorkspacesChanged());
@@ -303,6 +306,7 @@ function registerIpcHandlers({ app, mainWindow, checkAndDownloadUpdate, triggerU
   void checkRequiredOnlineServices();
   const configStore = createConfigStore(app);
   const remoteKnowledgeService = createRemoteKnowledgeService({ config: () => configStore.load().remote_knowledge });
+  const remoteKnowledgeDecisionService = createRemoteKnowledgeDecisionService();
   initLocalImageRenderService({ configStore });
   const licenseService = createLicenseService({ app, configStore });
   const aiService = createAiService({ app, configStore });
@@ -324,6 +328,7 @@ function registerIpcHandlers({ app, mainWindow, checkAndDownloadUpdate, triggerU
 
   const closeServices = async () => {
     donationService.close?.();
+    remoteKnowledgeDecisionService.dispose?.();
     await agentService.close?.();
     autoConfirmationService.close?.();
     await openXmlHelperService.close?.();
@@ -398,7 +403,7 @@ function registerIpcHandlers({ app, mainWindow, checkAndDownloadUpdate, triggerU
       }
     },
   });
-  registerRemoteKnowledgeIpc({ ipcMain, remoteKnowledgeService });
+  registerRemoteKnowledgeIpc({ ipcMain, remoteKnowledgeService, remoteKnowledgeDecisionService });
   registerDeveloperIpc({
     configStore,
     aiService,
@@ -440,7 +445,7 @@ function registerIpcHandlers({ app, mainWindow, checkAndDownloadUpdate, triggerU
     databaseStatus.updateStatus({ phase: 'checking', ready: false, message: '正在检查本地数据库' });
     setTimeout(() => {
       try {
-        registerWorkspaceDatabaseServices({ app, configStore, aiService, agentService, autoConfirmationService, fileService, openXmlHelperService, updateStatus: databaseStatus.updateStatus });
+        registerWorkspaceDatabaseServices({ app, configStore, aiService, agentService, autoConfirmationService, fileService, openXmlHelperService, remoteKnowledgeService, remoteKnowledgeDecisionService, updateStatus: databaseStatus.updateStatus });
         setTimeout(() => {
           void agentService.warmup?.().catch((error) => {
             console.warn('[agent] warmup failed', error?.message || String(error));

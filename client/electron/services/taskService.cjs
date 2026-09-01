@@ -314,14 +314,31 @@ function createTask(type, payload) {
   };
 }
 
-function createTaskService({ aiService, agentService, autoConfirmationService, technicalPlanStore, rejectionCheckStore, duplicateCheckStore, feasibilityReportStore, knowledgeBaseService, duplicateCheckService, openXmlHelperService }) {
+function cloneRemoteScopes(scopes) {
+  return (Array.isArray(scopes) ? scopes : []).map((scope) => ({
+    ...scope,
+    documents: (Array.isArray(scope?.documents) ? scope.documents : []).map((document) => ({ ...document })),
+  }));
+}
+
+function createTaskService({ aiService, agentService, autoConfirmationService, technicalPlanStore, rejectionCheckStore, duplicateCheckStore, feasibilityReportStore, knowledgeBaseService, knowledgeReferenceService, remoteKnowledgeDecisionService, duplicateCheckService, openXmlHelperService }) {
   const subscribers = new Set();
   const callbackSubscribers = new Set();
   const activeTasks = new Map();
   const activeTaskControls = new Map();
 
+  function snapshotTask(task) {
+    const control = activeTaskControls.get(task?.type);
+    const decision = control?.remoteKnowledgeDecision;
+    return {
+      ...task,
+      remote_knowledge_action_required: Boolean(decision),
+      ...(decision?.decisionId ? { remote_knowledge_decision_id: decision.decisionId } : {}),
+    };
+  }
+
   function emit(task, snapshot) {
-    const event = { task, ...snapshot };
+    const event = { task: snapshotTask(task), ...snapshot };
     for (const webContents of subscribers) {
       if (!webContents.isDestroyed()) {
         webContents.send('tasks:event', event);
@@ -332,11 +349,21 @@ function createTaskService({ aiService, agentService, autoConfirmationService, t
     }
   }
 
+  remoteKnowledgeDecisionService?.onDecision?.((decision) => {
+    for (const [type, control] of activeTaskControls.entries()) {
+      if (control.knowledgeSession?.taskId !== decision?.taskId) continue;
+      control.remoteKnowledgeDecision = decision;
+      const task = activeTasks.get(type);
+      if (task) emit(task, getSnapshotForTask(task));
+      break;
+    }
+  });
+
   function buildTechnicalPlanSnapshot(task, state = {}, eventPatch = {}) {
     const patch = { ...(eventPatch.technicalPlanPatch || {}) };
     const taskField = getTaskField(task.type);
     if (taskField) {
-      patch[taskField] = task || state?.[taskField];
+      patch[taskField] = snapshotTask(task) || state?.[taskField];
     }
 
     if (task.type === 'bid-analysis') {
@@ -693,6 +720,8 @@ function createTaskService({ aiService, agentService, autoConfirmationService, t
     const taskControl = {
       queueScopeId,
       signal: abortController.signal,
+      knowledgeSession: null,
+      remoteKnowledgeDecision: null,
       pauseRequested: false,
       outlineSelectionWaiter: null,
       outlineSelectionResult: null,
@@ -740,6 +769,8 @@ function createTaskService({ aiService, agentService, autoConfirmationService, t
         return settledPromise;
       },
       dispose() {
+        this.knowledgeSession?.dispose?.();
+        this.knowledgeSession = null;
         this.outlineSelectionWaiter?.reject?.(new Error('目录生成任务已结束'));
         this.outlineSelectionWaiter = null;
         autoConfirmationService.unregister(this.outlineSelectionAutoConfirmationId);
@@ -777,9 +808,12 @@ function createTaskService({ aiService, agentService, autoConfirmationService, t
         throw taskControl.signal.reason || new Error('后台任务已取消');
       }
       const nextTask = applyTaskPatch(taskPartial);
+      const persistedTask = { ...nextTask };
+      delete persistedTask.remote_knowledge_action_required;
+      delete persistedTask.remote_knowledge_decision_id;
       const persistedPatch = {
         ...(workspacePartial || {}),
-        [taskField]: nextTask,
+        [taskField]: persistedTask,
       };
       updateWorkspaceStateWithoutReload(definition, persistedPatch);
       emit(nextTask, buildSnapshot(definition, persistedPatch, nextTask, eventPatch));
@@ -855,6 +889,26 @@ function createTaskService({ aiService, agentService, autoConfirmationService, t
     };
 
     const previousState = loadWorkspaceState(definition) || {};
+    if (knowledgeReferenceService && ['outline-generation', 'global-facts-generation', 'content-generation'].includes(type)) {
+      const session = knowledgeReferenceService.createTaskSession({
+        taskId: currentTask.task_id,
+        workflow: previousState.workflowKind || 'technical-plan',
+        localDocumentIds: Array.isArray(previousState.referenceKnowledgeDocumentIds) ? [...previousState.referenceKnowledgeDocumentIds] : [],
+        remoteScopes: cloneRemoteScopes(previousState.remoteKnowledgeScopes),
+        taskControl,
+      });
+      taskControl.knowledgeSession = session;
+      if (session?.searchRemote) {
+        const originalSearchRemote = session.searchRemote.bind(session);
+        session.searchRemote = async (...args) => {
+          try {
+            return await originalSearchRemote(...args);
+          } finally {
+            taskControl.remoteKnowledgeDecision = null;
+          }
+        };
+      }
+    }
     const initialState = startOptions.skipInitialStateUpdate
       ? previousState
       : { ...initialPartial, [taskField]: currentTask };
@@ -890,7 +944,7 @@ function createTaskService({ aiService, agentService, autoConfirmationService, t
         signal: taskControl.signal,
       },
     );
-    runner({ aiService: runnerAiService, agentService: runnerAgentService, ordinaryAgentService: runnerOrdinaryAgentService, workspaceStore: runnerWorkspaceStore, knowledgeBaseService, openXmlHelperService, updateTask, checkpointTask, payload, taskControl, previousState }).catch((error) => {
+    runner({ aiService: runnerAiService, agentService: runnerAgentService, ordinaryAgentService: runnerOrdinaryAgentService, workspaceStore: runnerWorkspaceStore, knowledgeBaseService, knowledgeReferenceService, knowledgeSession: taskControl.knowledgeSession, openXmlHelperService, updateTask, checkpointTask, payload, taskControl, previousState }).catch((error) => {
       if (!taskControl.signal.aborted) {
         checkpointTask({ status: 'error', error: error.message || '任务执行失败' });
       }
@@ -904,7 +958,7 @@ function createTaskService({ aiService, agentService, autoConfirmationService, t
       resolveSettled();
     });
 
-    return currentTask;
+    return snapshotTask(currentTask);
   }
 
   // 取消技术方案任务并等待退出，避免清空下游后旧任务继续提交 checkpoint。
@@ -1660,7 +1714,7 @@ function createTaskService({ aiService, agentService, autoConfirmationService, t
       return feasibilityReportStore.saveKeyParameters(markdown);
     },
     getActiveTasks() {
-      return Array.from(activeTasks.values());
+      return Array.from(activeTasks.values()).map(snapshotTask);
     },
   };
 }
