@@ -1,4 +1,6 @@
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const test = require('node:test');
 
 const { registerRemoteKnowledgeIpc } = require('./remoteKnowledgeIpc.cjs');
@@ -45,14 +47,12 @@ test('registers only remote knowledge metadata channels and delegates requests',
   ]);
 });
 
-test('preload shape does not expose a generic remote request method', () => {
-  const preloadShape = {
-    remoteKnowledge: {
-      testConnection: () => undefined,
-      listKnowledgeBases: () => undefined,
-      listDocuments: () => undefined,
-    },
-  };
-
-  assert.equal(Object.hasOwn(preloadShape.remoteKnowledge, 'request'), false);
+test('real preload bridge exposes only the typed remote knowledge channels', () => {
+  const preloadSource = fs.readFileSync(path.join(__dirname, '..', 'preload.cjs'), 'utf8');
+  assert.match(preloadSource, /remoteKnowledge:\s*\{/);
+  assert.match(preloadSource, /testConnection:\s*\(config\)\s*=>\s*ipcRenderer\.invoke\('remote-knowledge:test-connection',\s*config\)/);
+  assert.match(preloadSource, /listKnowledgeBases:\s*\(\)\s*=>\s*ipcRenderer\.invoke\('remote-knowledge:list-knowledge-bases'\)/);
+  assert.match(preloadSource, /listDocuments:\s*\(input\)\s*=>\s*ipcRenderer\.invoke\('remote-knowledge:list-documents',\s*input\)/);
+  const remoteKnowledgeBlock = preloadSource.match(/remoteKnowledge:\s*\{([\s\S]*?)\n\s*\},\n\s*license:/)?.[1] || '';
+  assert.equal(/\brequest\s*:/.test(remoteKnowledgeBlock), false);
 });

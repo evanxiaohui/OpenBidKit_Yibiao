@@ -28,3 +28,13 @@ Task 4 completed: exposed remote-knowledge metadata IPC and added the 远程知�
 
 - The packaged remote-knowledge default API key remains governed by the existing ignored local default configuration; it is returned only through the explicit default IPC and is not logged.
 - No live remote service was contacted during verification.
+
+## Review Fix Round
+
+- Replaced the hand-built preload test shape with an integration assertion over the real `client/electron/preload.cjs` source. The test now verifies all three typed channel invocations and rejects a generic `request` property in the actual bridge block.
+- Added `remote-knowledge` to `canSaveActiveTab`, restoring the FloatingToolbar save state/action for this tab.
+
+### Review-Fix Verification
+
+- `node --test electron/ipc/remoteKnowledgeIpc.test.cjs`: 2 passed, including the real preload bridge assertion.
+- `npm run build`: passed; only the existing Vite chunk-size warning was emitted.
