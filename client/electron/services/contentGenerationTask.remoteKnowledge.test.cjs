@@ -7,6 +7,8 @@ const {
   namespaceRemoteKnowledgeItem,
   resolveRemoteKnowledgeContents,
   buildChapterContentMessages,
+  shouldRetainContentGenerationRuntime,
+  runContentGenerationTask,
 } = require('./contentGenerationTask.cjs');
 
 test('正文编排远程检索查询包含章节目标、已确认事实和招标要求', () => {
@@ -40,6 +42,16 @@ test('无远程引用时正文素材解析为空但不阻断生成', () => {
   assert.deepEqual(resolveRemoteKnowledgeContents([], runtime), []);
 });
 
+test('存在失败或未完成章节时任务收尾保留正文 runtime 快照', () => {
+  const leaves = [{ item: { id: 'done' } }, { item: { id: 'failed' } }];
+  assert.equal(shouldRetainContentGenerationRuntime(leaves, {
+    done: { status: 'success' }, failed: { status: 'error' },
+  }), true);
+  assert.equal(shouldRetainContentGenerationRuntime(leaves, {
+    done: { status: 'success' }, failed: { status: 'ignored' },
+  }), false);
+});
+
 test('正文生成提示明确要求招标要求和事实优先且不泄露内部来源标识', () => {
   const messages = buildChapterContentMessages({
     chapter: { id: 's1', title: '质量保证', description: '验收' },
@@ -49,4 +61,73 @@ test('正文生成提示明确要求招标要求和事实优先且不泄露内�
   });
   assert.match(messages[0].content, /当前招标要求、用户确认事实和原方案高于参考知识/);
   assert.match(messages[0].content, /不得输出 local: 或 remote:/);
+});
+
+test('失败章节重试保留锁定远程片段且不发起第二次检索', async () => {
+  const remoteId = 'remote:kb-1:doc-1:chunk-1';
+  const reference = {
+    id: remoteId,
+    knowledgeBaseId: 'kb-1', knowledgeId: 'doc-1', chunkId: 'chunk-1',
+    title: '质量规范', content: '锁定远程质量控制片段', score: 0.9,
+  };
+  let failFirstRetry = true;
+  const searches = [];
+  const chatMessages = [];
+  const state = {
+    outlineData: { project_overview: '智慧水务', outline: [{ id: 's1', title: '质量保证', description: '质量控制', content_mode: 'ai-generate' }] },
+    globalFacts: [{ title: '工期', content: '180 日历天' }],
+    globalFactsTask: { status: 'success' },
+    contentGenerationOptions: {
+      enableConsistencyAudit: false, useAiImages: false, useMermaidImages: false, useHtmlImages: false,
+      tableRequirement: 'none', maxAiImages: 0, maxMermaidImages: 0, maxHtmlImages: 0, htmlImageTypes: '',
+    },
+    contentGenerationSections: { s1: { id: 's1', title: '质量保证', status: 'error', content: '', error: '首次失败' } },
+    contentGenerationPlans: { s1: {
+      plan_version: 4,
+      plan: { writing_focus: '质量控制', knowledge: { item_ids: [remoteId] }, facts: { titles: ['工期'] }, table: { needed: false } },
+      table_requirement: 'none',
+    } },
+    contentGenerationTask: { status: 'paused', stats: { content: { planning_completed: 1 } } },
+    contentGenerationRuntime: { target_item_id: 's1', remoteKnowledgeReferencesBySection: { s1: [reference] } },
+  };
+  const workspaceStore = {
+    loadTechnicalPlan: () => structuredClone(state),
+    updateTechnicalPlanWithoutReload() {},
+  };
+  const checkpointTask = (taskPatch, workspacePatch = {}) => {
+    Object.assign(state, workspacePatch);
+    const item = workspacePatch.contentGenerationItem;
+    if (item?.section) state.contentGenerationSections = { ...state.contentGenerationSections, [item.nodeId]: item.section };
+    if (item?.storedPlan) state.contentGenerationPlans = { ...state.contentGenerationPlans, [item.nodeId]: item.storedPlan };
+    if (item && Object.hasOwn(item, 'runtime')) state.contentGenerationRuntime = item.runtime;
+    if (Object.hasOwn(workspacePatch, 'contentGenerationRuntime')) state.contentGenerationRuntime = workspacePatch.contentGenerationRuntime;
+    state.contentGenerationTask = { ...(state.contentGenerationTask || {}), ...taskPatch };
+    return { task: state.contentGenerationTask };
+  };
+  const aiService = {
+    getConfig: () => ({ concurrency_limit: 1 }),
+    collectJsonResponse: async () => { throw new Error('重试不应重新编排'); },
+    chat: async ({ messages }) => {
+      chatMessages.push(messages);
+      if (failFirstRetry) {
+        failFirstRetry = false;
+        throw new Error('模拟正文生成失败');
+      }
+      return '质量控制正文。';
+    },
+  };
+  const taskControl = { signal: new AbortController().signal, isPauseRequested: () => false };
+  const sharedInput = {
+    aiService, agentService: {}, workspaceStore, knowledgeBaseService: {},
+    knowledgeSession: { searchRemote: async (request) => { searches.push(request); return []; } },
+    updateTask: (patch) => ({ ...(state.contentGenerationTask || {}), ...patch }), checkpointTask,
+    taskControl,
+  };
+
+  await runContentGenerationTask({ ...sharedInput, payload: { resume: true }, previousState: structuredClone(state) });
+  assert.deepEqual(state.contentGenerationRuntime?.remoteKnowledgeReferencesBySection?.s1, [reference]);
+  await runContentGenerationTask({ ...sharedInput, payload: { retryFailedSections: true } });
+
+  assert.equal(searches.length, 0);
+  assert.match(chatMessages.at(-1).map((message) => message.content).join('\n'), /锁定远程质量控制片段/);
 });

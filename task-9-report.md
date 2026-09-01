@@ -13,3 +13,8 @@
 - `node --test electron/services/contentGenerationTask.remoteKnowledge.test.cjs`：4 项通过。
 - `node --check electron/services/contentGenerationTask.cjs`：通过。
 - `npm run build`：通过；仅有既有 Vite chunk 体积警告。
+
+## Fix Round 1
+
+- 任务收尾改为检查全部 AI 生成章节：只要仍有 `idle`、`running` 或 `error` 的可重试章节，就持久化当前 `contentGenerationRuntime`，包括锁定的远程片段快照；只有全部成功或忽略时才清理 runtime。
+- 新增回归测试模拟单章节恢复任务在生成阶段失败后收尾，再执行失败章节重试；验证不会再次调用远程检索，且正文请求仍收到锁定远程片段。

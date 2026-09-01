@@ -2946,6 +2946,10 @@ function isUnresolvedContentSection(section) {
   return section?.status !== 'success' && section?.status !== 'ignored';
 }
 
+function shouldRetainContentGenerationRuntime(leaves, sections) {
+  return (leaves || []).some(({ item }) => isUnresolvedContentSection(sections?.[item?.id]));
+}
+
 function now() {
   return new Date().toISOString();
 }
@@ -6805,7 +6809,9 @@ workspace 文件说明：
     const failedCount = statusLeaves.filter(({ item }) => sections[item.id]?.status === 'error').length;
     const finalProgress = progressFor(leaves, sections);
     const finalStatus = taskStatusFor(statusLeaves, sections);
-    contentStats.phase = 'done';
+    const retainRuntime = shouldRetainContentGenerationRuntime(leaves, sections);
+    contentStats.phase = retainRuntime ? 'generating' : 'done';
+    contentStats.awaiting_content_decision = retainRuntime;
     logs = [...logs, targetItemId
       ? (failedCount ? `小节重新生成结束，当前整体进度 ${finalProgress}%，${failedCount} 个小节失败。` : `小节重新生成完成，当前整体进度 ${finalProgress}%。`)
       : (failedCount ? `正文生成完成，${failedCount} 个小节失败。` : '正文生成完成。')];
@@ -6817,11 +6823,14 @@ workspace 文件说明：
       stats: statsSnapshot(),
       touched_item_ids: [...touchedItemIds],
     });
+    const finalRuntime = retainRuntime
+      ? syncRuntime({ phase: 'generating', awaiting_content_decision: true })
+      : undefined;
     checkpointTask({ status: finalStatus, progress: finalProgress, logs, stats: statsSnapshot(), pause_requested: false }, {
       outlineData,
       contentGenerationSections: sections,
       contentGenerationPlans: storedContentPlans,
-      contentGenerationRuntime: undefined,
+      contentGenerationRuntime: finalRuntime,
     });
   } catch (error) {
     if (isAiQueueScopePausedError(error)) {
@@ -6867,6 +6876,7 @@ module.exports = {
   normalizeContentGenerationRuntime,
   namespaceRemoteKnowledgeItem,
   resolveRemoteKnowledgeContents,
+  shouldRetainContentGenerationRuntime,
   buildChapterContentMessages,
   __developerContentExpansionPatchRuntime,
 };
