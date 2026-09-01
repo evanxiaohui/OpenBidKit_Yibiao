@@ -287,7 +287,18 @@ export interface ContentGenerationRuntimeState {
   target_item_id?: string;
   regenerate_requirement?: string;
   awaiting_content_decision?: boolean;
+  remoteKnowledgeReferencesBySection?: Record<string, ContentGenerationRemoteReference[]>;
   updated_at?: string;
+}
+
+export interface ContentGenerationRemoteReference {
+  id: string;
+  knowledgeBaseId: string;
+  knowledgeId: string;
+  chunkId: string;
+  title: string;
+  content: string;
+  score: number;
 }
 
 export interface TechnicalPlanTenderFile {

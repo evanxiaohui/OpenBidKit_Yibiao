@@ -911,7 +911,8 @@ function buildChapterContentMessages({ chapter, projectOverview, selectedFactsTe
 13. 只有步骤、流程、时间顺序、操作顺序等连续性非常强的内容，才可以使用有序列表；其他分段一律使用自然段、无编号列表或无编号加粗引导语，禁止使用任何形式的编号。
 14. 直接返回章节内容，不生成标题，不要任何额外说明。
 15. 如果本章节需要使用的全局事实变量中包含相关内容，必须优先使用变量值，不得前后矛盾。
-16. 仅使用本章节提供的全局事实变量；未提供时不要主动编造具体人员、周期、质保、品牌、型号等会影响全文一致性的承诺。${buildContentFactCompletenessInstruction(globalFactsMode) ? `\n\n${buildContentFactCompletenessInstruction(globalFactsMode)}` : ''}`,
+        16. 仅使用本章节提供的全局事实变量；未提供时不要主动编造具体人员、周期、质保、品牌、型号等会影响全文一致性的承诺。
+17. 当前招标要求、用户确认事实和原方案高于参考知识。参考知识必须结合本项目改写，不得输出 local: 或 remote: 内部来源标识。${buildContentFactCompletenessInstruction(globalFactsMode) ? `\n\n${buildContentFactCompletenessInstruction(globalFactsMode)}` : ''}`,
     },
   ];
 
@@ -2148,6 +2149,16 @@ function resolveKnowledgeContents(itemIds, knowledgeContentMap) {
   return contents;
 }
 
+function resolveRemoteKnowledgeContents(itemIds, runtime) {
+  const selected = new Set(normalizeKnowledgeItemIds(itemIds));
+  if (!selected.size) return [];
+  const references = Object.values(runtime?.remoteKnowledgeReferencesBySection || {}).flat();
+  const seen = new Set();
+  return references
+    .filter((item) => selected.has(item.id) && item.content && !seen.has(item.id) && seen.add(item.id))
+    .map((item) => item.content);
+}
+
 function resolveSelectedFactsText(contentPlan, globalFacts) {
   const selectedFacts = resolveGlobalFactsByTitles(contentPlan?.facts?.titles, globalFacts);
   return formatSelectedGlobalFactsForPrompt(selectedFacts);
@@ -2552,6 +2563,47 @@ function normalizeStringArray(value) {
   return Array.isArray(value) ? [...new Set(value.map((item) => String(item || '').trim()).filter(Boolean))] : [];
 }
 
+function namespaceRemoteKnowledgeItem(item) {
+  const knowledgeBaseId = String(item?.knowledgeBaseId || item?.knowledge_base_id || '').trim();
+  const knowledgeId = String(item?.knowledgeId || item?.knowledge_id || '').trim();
+  const chunkId = String(item?.chunkId || item?.chunk_id || item?.id || '').trim();
+  const id = String(item?.id || '').trim() || `remote:${knowledgeBaseId}:${knowledgeId}:${chunkId}`;
+  return {
+    id: id.startsWith('remote:') ? id : `remote:${knowledgeBaseId}:${knowledgeId}:${chunkId}`,
+    knowledgeBaseId,
+    knowledgeId,
+    chunkId,
+    title: singleLine(item?.title || item?.knowledge_title || '远程知识'),
+    content: String(item?.content || item?.chunk_content || '').trim(),
+    score: Number.isFinite(Number(item?.score)) ? Number(item.score) : 0,
+  };
+}
+
+function buildContentPlanningRetrievalQuery({ chapter, projectOverview, bidAnalysisFactsText, globalFactTitlesText, techRequirements } = {}) {
+  return [
+    chapter?.title ? `章节：${singleLine(chapter.title)}` : '',
+    (chapter?.objective || chapter?.description) ? `目标：${singleLine(chapter.objective || chapter.description)}` : '',
+    chapter?.requirements ? `相关要求：${singleLine(chapter.requirements)}` : '',
+    projectOverview ? `项目概述：${singleLine(projectOverview)}` : '',
+    bidAnalysisFactsText ? `已确认事实：${singleLine(bidAnalysisFactsText)}` : '',
+    globalFactTitlesText ? `已确认事实变量：${singleLine(globalFactTitlesText)}` : '',
+    techRequirements ? `招标要求：${singleLine(techRequirements)}` : '',
+  ].filter(Boolean).join('\n');
+}
+
+function normalizeRemoteKnowledgeReferencesBySection(value) {
+  const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const result = {};
+  for (const [sectionId, refs] of Object.entries(source)) {
+    const normalized = (Array.isArray(refs) ? refs : [])
+      .map(namespaceRemoteKnowledgeItem)
+      .filter((item) => item.id && item.content)
+      .filter((item, index, list) => list.findIndex((candidate) => candidate.id === item.id) === index);
+    if (normalized.length) result[String(sectionId)] = normalized;
+  }
+  return result;
+}
+
 // 从待生成小节中无放回随机选取开发者模拟失败目标。
 function selectRandomItemIds(itemIds, count) {
   const candidates = [...itemIds];
@@ -2578,6 +2630,7 @@ function normalizeContentGenerationRuntime(value) {
     target_item_id: String(source.target_item_id || '').trim(),
     regenerate_requirement: String(source.regenerate_requirement || '').trim(),
     awaiting_content_decision: Boolean(source.awaiting_content_decision),
+    remoteKnowledgeReferencesBySection: normalizeRemoteKnowledgeReferencesBySection(source.remoteKnowledgeReferencesBySection),
     updated_at: source.updated_at || now(),
   };
 }
@@ -2912,7 +2965,7 @@ function withSection(sections, item, partial) {
   };
 }
 
-async function runContentGenerationTask({ aiService, agentService, workspaceStore, knowledgeBaseService, updateTask: updateManagedTask, checkpointTask: checkpointManagedTask, payload, taskControl, previousState }) {
+async function runContentGenerationTask({ aiService, agentService, workspaceStore, knowledgeBaseService, knowledgeSession, updateTask: updateManagedTask, checkpointTask: checkpointManagedTask, payload, taskControl, previousState }) {
   const resume = Boolean(payload.resume);
   const storedPlan = resume ? (previousState || {}) : (workspaceStore.loadTechnicalPlan() || {});
   const wordControl = normalizeOutlineWordControlSnapshot(storedPlan.outlineWordControlSnapshot);
@@ -3436,6 +3489,15 @@ async function runContentGenerationTask({ aiService, agentService, workspaceStor
   knowledgeItems = knowledgeReferences.items;
   allowedKnowledgeItemIds = new Set(knowledgeItems.map((item) => item.id));
   knowledgeContentMap = knowledgeReferences.contentMap;
+  for (const references of Object.values(contentRuntime.remoteKnowledgeReferencesBySection || {})) {
+    for (const reference of references) {
+      const normalized = namespaceRemoteKnowledgeItem(reference);
+      if (!normalized.content) continue;
+      allowedKnowledgeItemIds.add(normalized.id);
+      knowledgeItems.push({ id: normalized.id, title: normalized.title, resume: normalized.content.slice(0, 240) });
+      knowledgeContentMap.set(normalized.id, { content: normalized.content });
+    }
+  }
 
   function getLeafContentForWords(item) {
     const section = sections[item.id];
@@ -3893,9 +3955,40 @@ async function runContentGenerationTask({ aiService, agentService, workspaceStor
     return storedContentPlans;
   }
 
+  async function retrieveRemoteKnowledgeForPlanning(context) {
+    if (!knowledgeSession?.searchRemote) return [];
+    const query = buildContentPlanningRetrievalQuery({
+      chapter: context.item,
+      projectOverview,
+      bidAnalysisFactsText,
+      globalFactTitlesText,
+      techRequirements,
+    });
+    if (!query) return [];
+    try {
+      const found = await knowledgeSession.searchRemote({ stage: 'content-planning', query, matchCount: 8 });
+      const references = (Array.isArray(found) ? found : [])
+        .map(namespaceRemoteKnowledgeItem)
+        .filter((item) => item.content && item.knowledgeBaseId && item.knowledgeId && item.chunkId);
+      for (const reference of references) {
+        if (!allowedKnowledgeItemIds.has(reference.id)) {
+          allowedKnowledgeItemIds.add(reference.id);
+          knowledgeItems.push({ id: reference.id, title: reference.title, resume: reference.content.slice(0, 240) });
+        }
+        knowledgeContentMap.set(reference.id, { content: reference.content });
+      }
+      return references;
+    } catch (error) {
+      if (isPauseLikeError(error)) throw error;
+      logs = [...logs, `远程知识检索失败，正文编排继续使用本地材料：${error.message || String(error)}`];
+      return [];
+    }
+  }
+
   async function planOne(context, { preservedOriginalMaterial } = {}) {
     const { item, parentChapters, siblingChapters } = context;
     let contentPlan;
+    const remoteReferences = await retrieveRemoteKnowledgeForPlanning(context);
 
     try {
       contentPlan = await aiService.collectJsonResponse({
@@ -3935,6 +4028,12 @@ async function runContentGenerationTask({ aiService, agentService, workspaceStor
         original_material: preservedOriginalMaterial,
       };
     }
+
+    const selectedRemoteReferences = remoteReferences.filter((reference) => contentPlan.knowledge.item_ids.includes(reference.id));
+    const remoteSnapshot = { ...(contentRuntime.remoteKnowledgeReferencesBySection || {}) };
+    if (selectedRemoteReferences.length) remoteSnapshot[item.id] = selectedRemoteReferences;
+    else delete remoteSnapshot[item.id];
+    contentRuntime = syncRuntime({ remoteKnowledgeReferencesBySection: remoteSnapshot });
 
     contentPlans.set(item.id, contentPlan);
     storedContentPlans = pruneContentGenerationPlans({
@@ -4214,7 +4313,13 @@ async function runContentGenerationTask({ aiService, agentService, workspaceStor
       contentPlan = getContentPlanForItem(item.id);
       originalState = getOriginalMaterialRuntimeState(item);
       originalMaterial = originalState.originalMaterial;
-      const knowledgeContents = resolveKnowledgeContents(contentPlan.knowledge?.item_ids, knowledgeContentMap);
+      const selectedKnowledgeIds = contentPlan.knowledge?.item_ids || [];
+      const localKnowledgeContents = resolveKnowledgeContents(
+        selectedKnowledgeIds.filter((id) => !String(id).startsWith('remote:')),
+        knowledgeContentMap,
+      );
+      const remoteKnowledgeContents = resolveRemoteKnowledgeContents(selectedKnowledgeIds, contentRuntime);
+      const knowledgeContents = [...localKnowledgeContents, ...remoteKnowledgeContents];
       const selectedFactsText = resolveSelectedFactsText(contentPlan, globalFacts);
       const generationTarget = computeGenerationWordTarget(wordControl, leaves.length);
       const contentMessages = needsRestoredOptimization
@@ -6755,4 +6860,13 @@ const __developerContentExpansionPatchRuntime = {
   applyContentExpansionPatch,
 };
 
-module.exports = { runContentGenerationTask, stripRepeatedChapterTitle, __developerContentExpansionPatchRuntime };
+module.exports = {
+  runContentGenerationTask,
+  stripRepeatedChapterTitle,
+  buildContentPlanningRetrievalQuery,
+  normalizeContentGenerationRuntime,
+  namespaceRemoteKnowledgeItem,
+  resolveRemoteKnowledgeContents,
+  buildChapterContentMessages,
+  __developerContentExpansionPatchRuntime,
+};
