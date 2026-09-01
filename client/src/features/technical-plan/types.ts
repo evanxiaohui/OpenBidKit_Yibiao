@@ -342,20 +342,8 @@ export interface DetectedBidSection {
   evidence?: string[];
 }
 
-export type RemoteKnowledgeScopeMode = 'all' | 'documents';
-
-export interface RemoteKnowledgeDocumentScope {
-  knowledgeId: string;
-  title: string;
-}
-
-export interface RemoteKnowledgeScope {
-  knowledgeBaseId: string;
-  knowledgeBaseName: string;
-  mode: RemoteKnowledgeScopeMode;
-  endpointFingerprint: string;
-  documents: RemoteKnowledgeDocumentScope[];
-}
+export type { RemoteKnowledgeScopeMode, RemoteKnowledgeDocumentScope, RemoteKnowledgeScope } from '../../shared/types/ipc';
+import type { RemoteKnowledgeScope } from '../../shared/types/ipc';
 
 export interface TechnicalPlanState {
   workflowKind: TechnicalPlanWorkflowKind;

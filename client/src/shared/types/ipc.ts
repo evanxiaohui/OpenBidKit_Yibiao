@@ -73,6 +73,23 @@ export interface RemoteKnowledgeBase {
   description: string;
 }
 
+export type RemoteKnowledgeScopeMode = 'all' | 'documents';
+export interface RemoteKnowledgeDocumentScope { knowledgeId: string; title: string; }
+export interface RemoteKnowledgeScope {
+  knowledgeBaseId: string;
+  knowledgeBaseName: string;
+  mode: RemoteKnowledgeScopeMode;
+  endpointFingerprint: string;
+  documents: RemoteKnowledgeDocumentScope[];
+}
+export interface StartOutlineGenerationPayload {
+  reference_knowledge_document_ids: string[];
+  remote_knowledge_scopes: RemoteKnowledgeScope[];
+  outline_mode: string;
+  outline_expansion_mode: string;
+  word_control_options: OutlineWordControlOptions;
+}
+
 export interface RemoteKnowledgeDocumentPage {
   items: Array<{
     id: string;
@@ -743,7 +760,7 @@ export interface YibiaoBridge {
   tasks: {
     startBidSectionExtraction: (payload?: unknown) => Promise<unknown>;
     startBidAnalysis: (payload: unknown) => Promise<unknown>;
-    startOutlineGeneration: (payload: unknown) => Promise<unknown>;
+    startOutlineGeneration: (payload: StartOutlineGenerationPayload) => Promise<unknown>;
     suppressOutlineSelectionAutoConfirmation: (payload: { taskId: string }) => Promise<{ success: boolean }>;
     startGlobalFactsGeneration: (payload: unknown) => Promise<unknown>;
     startContentGeneration: (payload: unknown) => Promise<unknown>;

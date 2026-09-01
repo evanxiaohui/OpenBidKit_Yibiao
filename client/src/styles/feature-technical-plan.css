@@ -3849,3 +3849,5 @@
 .remote-knowledge-documents { display: grid; gap: 6px; margin-top: 8px; }
 .outline-knowledge-error { color: #b42318; display: flex; gap: 8px; align-items: center; }
 .outline-knowledge-stale { color: #b54708; }
+.outline-knowledge-badge { color: var(--yb-color-primary, #2563eb); font-size: 12px; margin-right: 6px; }
+.outline-knowledge-badge.remote { color: #7c3aed; }

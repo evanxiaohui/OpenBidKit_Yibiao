@@ -32,7 +32,7 @@ export function selectRemoteDocuments(
   documents: RemoteKnowledgeDocumentScope[],
   endpointFingerprint = '',
 ): RemoteKnowledgeScope[] {
-  if (!documents.length) return scopes;
+  if (!documents.length) return scopes.filter((scope) => scope.knowledgeBaseId !== knowledgeBase.id);
   const existing = scopes.find((scope) => scope.knowledgeBaseId === knowledgeBase.id);
   const normalizedDocuments = documents.map((document) => existing?.documents.find((item) => item.knowledgeId === document.knowledgeId) || document);
   const replacement: RemoteKnowledgeScope = {

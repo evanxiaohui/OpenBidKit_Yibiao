@@ -12,6 +12,7 @@ import { DEFAULT_EXPORT_FORMAT } from '../../../shared/types/exportFormat';
 import { formatOutlineTitle } from '../../../shared/utils/outlineNumbering';
 import OutlineSelectionDialog from '../components/OutlineSelectionDialog';
 import RemoteKnowledgePicker from '../components/RemoteKnowledgePicker';
+import { isRemoteScopeStale } from '../remoteKnowledgeSelection';
 
 interface OutlineEditPageProps {
   workflowKind: TechnicalPlanWorkflowKind;
@@ -577,6 +578,17 @@ function OutlineEditPage({
     strictSectionWords: draftStrictSectionWords,
   });
 
+  const ensureRemoteScopesFresh = async () => {
+    if (!draftRemoteKnowledgeScopes.length) return true;
+    const config = await window.yibiao?.config.getRemoteKnowledgeDefault();
+    const fingerprint = config?.base_url || '';
+    if (draftRemoteKnowledgeScopes.some((scope) => isRemoteScopeStale(scope, fingerprint))) {
+      showToast('远程知识选择已过期，请切换到远程知识并重新选择', 'info');
+      return false;
+    }
+    return true;
+  };
+
   const applyNormalizedWordControlDraft = (options: OutlineWordControlOptions) => {
     setDraftMinimumWords(formatWordCountDraft(options.minimumWords));
     setDraftMaximumWords(formatWordCountDraft(options.maximumWords));
@@ -590,6 +602,7 @@ function OutlineEditPage({
       return;
     }
     try {
+      if (!await ensureRemoteScopesFresh()) return;
       const wordControlOptions = getNormalizedWordControlOptions();
       setSavingOutlineConfig(true);
       await onOutlineConfigChange({
@@ -620,6 +633,7 @@ function OutlineEditPage({
     }
 
     try {
+      if (!await ensureRemoteScopesFresh()) return;
       const wordControlOptions = getNormalizedWordControlOptions();
       const startedNow = Date.now();
       setStartingOutline(true);
@@ -1148,9 +1162,6 @@ function OutlineEditPage({
 
     const keyword = knowledgeSearch.trim().toLowerCase();
     const availableDocuments = knowledgeIndex.documents.filter((document) => document.status === 'success');
-    const selectedDocuments = draftKnowledgeDocumentIds
-      .map((documentId) => knowledgeIndex.documents.find((document) => document.id === documentId))
-      .filter((document): document is KnowledgeDocument => Boolean(document));
     const visibleFolders = knowledgeIndex.folders.flatMap((folder) => {
       const folderDocuments = availableDocuments.filter((document) => document.folder_id === folder.id);
       const folderMatched = keyword ? includesKeyword(folder.name, keyword) : false;
@@ -1227,27 +1238,24 @@ function OutlineEditPage({
               }) : <div className="outline-knowledge-empty compact">没有匹配的知识库文档</div>}
             </div>
           </div>
-          <aside className="outline-knowledge-selected-pane">
-            <div className="outline-knowledge-pane-head">
-              <strong>本次已选</strong>
-              <button type="button" onClick={clearDraftKnowledgeDocuments} disabled={knowledgePickingDisabled || !draftKnowledgeDocumentIds.length}>清空</button>
-            </div>
-            {selectedDocuments.length ? (
-              <div className="outline-knowledge-selected-list">
-                {selectedDocuments.map((document) => (
-                  <div className="outline-knowledge-selected-item" key={document.id}>
-                    <strong title={document.file_name}>{document.file_name}</strong>
-                    <button type="button" onClick={() => removeDraftKnowledgeDocument(document.id)} disabled={knowledgePickingDisabled}>移除</button>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="outline-knowledge-empty compact">未选择知识库文档</div>
-            )}
-          </aside>
         </div>
       </div>
     );
+  };
+
+  const renderCombinedKnowledgeSelection = () => {
+    const localDocuments = draftKnowledgeDocumentIds.map((id) => knowledgeIndex.documents.find((doc) => doc.id === id)).filter((doc): doc is KnowledgeDocument => Boolean(doc));
+    const remoteItems: Array<{ key: string; label: string; scopeId: string; documentId?: string }> = draftRemoteKnowledgeScopes.flatMap((scope) => scope.mode === 'all'
+      ? [{ key: `remote:${scope.knowledgeBaseId}`, label: `${scope.knowledgeBaseName}（整个知识库）`, scopeId: scope.knowledgeBaseId }]
+      : scope.documents.map((doc) => ({ key: `remote:${scope.knowledgeBaseId}:${doc.knowledgeId}`, label: `${scope.knowledgeBaseName} / ${doc.title}`, scopeId: scope.knowledgeBaseId, documentId: doc.knowledgeId })));
+    const hasItems = localDocuments.length > 0 || remoteItems.length > 0;
+    return <aside className="outline-knowledge-selected-pane">
+      <div className="outline-knowledge-pane-head"><strong>本次已选</strong><button type="button" onClick={() => { clearDraftKnowledgeDocuments(); setDraftRemoteKnowledgeScopes([]); }} disabled={knowledgePickingDisabled || !hasItems}>清空</button></div>
+      {hasItems ? <div className="outline-knowledge-selected-list">
+        {localDocuments.map((doc) => <div className="outline-knowledge-selected-item" key={`local:${doc.id}`}><span className="outline-knowledge-badge">本地</span><strong title={doc.file_name}>{doc.file_name}</strong><button type="button" onClick={() => removeDraftKnowledgeDocument(doc.id)} disabled={knowledgePickingDisabled}>移除</button></div>)}
+        {remoteItems.map((item) => <div className="outline-knowledge-selected-item" key={item.key}><span className="outline-knowledge-badge remote">远程</span><strong>{item.label}</strong><button type="button" onClick={() => setDraftRemoteKnowledgeScopes(draftRemoteKnowledgeScopes.flatMap((scope) => scope.knowledgeBaseId !== item.scopeId ? [scope] : scope.mode === 'all' || !item.documentId ? [] : [{ ...scope, documents: scope.documents.filter((doc) => doc.knowledgeId !== item.documentId) }].filter((scope) => scope.documents.length)))} disabled={knowledgePickingDisabled}>移除</button></div>)}
+      </div> : <div className="outline-knowledge-empty compact">未选择知识库文档</div>}
+    </aside>;
   };
 
   return (
@@ -1538,6 +1546,7 @@ function OutlineEditPage({
                 </div>
                 <div className="outline-knowledge-tabs"><button type="button" className={knowledgeTab === 'local' ? 'is-active' : ''} onClick={() => setKnowledgeTab('local')}>本地知识</button><button type="button" className={knowledgeTab === 'remote' ? 'is-active' : ''} onClick={() => setKnowledgeTab('remote')}>远程知识</button></div>
                 {knowledgeTab === 'local' ? renderKnowledgePicker() : <RemoteKnowledgePicker scopes={draftRemoteKnowledgeScopes} disabled={knowledgePickingDisabled} onChange={setDraftRemoteKnowledgeScopes} />}
+                {renderCombinedKnowledgeSelection()}
               </section>
             </div>
 
