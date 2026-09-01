@@ -11,6 +11,7 @@ const { registerFileIpc } = require('./fileIpc.cjs');
 const { registerKnowledgeBaseIpc } = require('./knowledgeBaseIpc.cjs');
 const { registerLicenseIpc } = require('./licenseIpc.cjs');
 const { registerRejectionCheckIpc } = require('./rejectionCheckIpc.cjs');
+const { registerRemoteKnowledgeIpc } = require('./remoteKnowledgeIpc.cjs');
 const { registerTaskIpc } = require('./taskIpc.cjs');
 const { registerTechnicalPlanIpc } = require('./technicalPlanIpc.cjs');
 const { registerFeasibilityReportIpc } = require('./feasibilityReportIpc.cjs');
@@ -32,6 +33,7 @@ const { createKnowledgeBaseService } = require('../services/knowledgeBaseService
 const { createKnowledgeBaseStore } = require('../services/knowledgeBaseStore.cjs');
 const { createLicenseService } = require('../services/licenseService.cjs');
 const { createRejectionCheckStore } = require('../services/rejectionCheckStore.cjs');
+const { createRemoteKnowledgeService } = require('../services/remoteKnowledgeService.cjs');
 const { createSqliteDatabase } = require('../services/sqliteDatabase.cjs');
 const { createSystemFontService } = require('../services/systemFontService.cjs');
 const { clearOrphanedGeneratedImages, clearStalePiTaskArchives, runHistoricalStorageCleanup } = require('../services/storageCleanupService.cjs');
@@ -300,6 +302,7 @@ function registerWorkspaceDatabaseServices({ app, configStore, aiService, agentS
 function registerIpcHandlers({ app, mainWindow, checkAndDownloadUpdate, triggerUpdateDownload, quitAndInstall, getLatestVersion, getUpdateDownloadUrl, gpuStartupState = {}, gpuTrialArg = '--yibiao-trial-hardware-acceleration', forceDisableGpuArgs = [], openDeveloperTokenStatsWindow, closeDeveloperTokenStatsWindow, openDeveloperAgentMonitorWindow, closeDeveloperAgentMonitorWindow }) {
   void checkRequiredOnlineServices();
   const configStore = createConfigStore(app);
+  const remoteKnowledgeService = createRemoteKnowledgeService({ config: () => configStore.load().remote_knowledge });
   initLocalImageRenderService({ configStore });
   const licenseService = createLicenseService({ app, configStore });
   const aiService = createAiService({ app, configStore });
@@ -395,6 +398,7 @@ function registerIpcHandlers({ app, mainWindow, checkAndDownloadUpdate, triggerU
       }
     },
   });
+  registerRemoteKnowledgeIpc({ ipcMain, remoteKnowledgeService });
   registerDeveloperIpc({
     configStore,
     aiService,

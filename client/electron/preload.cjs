@@ -69,7 +69,13 @@ const bridge = {
     save: (config) => ipcRenderer.invoke('config:save', config),
     listModels: (config) => ipcRenderer.invoke('config:list-models', config),
     getModelInfo: (modelName) => ipcRenderer.invoke('config:get-model-info', modelName),
+    getRemoteKnowledgeDefault: () => ipcRenderer.invoke('config:get-remote-knowledge-default'),
     openConfigFolder: () => ipcRenderer.invoke('config:open-config-folder'),
+  },
+  remoteKnowledge: {
+    testConnection: (config) => ipcRenderer.invoke('remote-knowledge:test-connection', config),
+    listKnowledgeBases: () => ipcRenderer.invoke('remote-knowledge:list-knowledge-bases'),
+    listDocuments: (input) => ipcRenderer.invoke('remote-knowledge:list-documents', input),
   },
   license: {
     getStatus: () => ipcRenderer.invoke('license:get-status'),

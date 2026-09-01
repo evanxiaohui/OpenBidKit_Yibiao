@@ -1,6 +1,6 @@
 import type { AiHttpErrorPayload, ChatCompletionRequest, JsonCompletionRequest } from './ai';
 import type { DuplicateCheckWorkspacePatch, DuplicateCheckWorkspaceState, FileSelectionResult } from './bid';
-import type { ClientConfig, ConfigSaveResult, ImageModelTestResult, ModelInfoResult, ModelListResult, UpdateChannel } from './config';
+import type { ClientConfig, ConfigSaveResult, ImageModelTestResult, ModelInfoResult, ModelListResult, RemoteKnowledgeConnectionConfig, UpdateChannel } from './config';
 import type { KnowledgeAnalysisSnapshot, KnowledgeBaseEvent, KnowledgeBaseIndex, KnowledgeBaseIndexMutationResult, KnowledgeBaseMutationResult, KnowledgeBaseRetryDocumentResult, KnowledgeBaseStartMatchingResult, KnowledgeBaseUploadResult, KnowledgeDocument, KnowledgeFolder, KnowledgeItem } from '../../features/knowledge-base/types';
 import type { RejectionCheckWorkspacePatch, RejectionCheckWorkspaceState, RejectionDocumentRole } from '../../features/rejection-check/types';
 import type { BidAnalysisMode, BidAnalysisTaskState, BidSectionMode, ContentGenerationOptions, ContentGenerationPlanState, ContentGenerationProgressDetail, ContentGenerationRuntimeState, ContentGenerationSectionState, DetectedBidSection, GlobalFactGroupState, GlobalFactsMode, SaveOutlineRequest, SaveOutlineSelectionRequest, TechnicalPlanState, TechnicalPlanStep, TechnicalPlanWorkflowKind } from '../../features/technical-plan/types';
@@ -65,6 +65,28 @@ export interface RequiredOnlineServicesStatus {
   checked: boolean;
   services: RequiredOnlineServiceStatus[];
   unavailableServices: RequiredOnlineServiceStatus[];
+}
+
+export interface RemoteKnowledgeBase {
+  id: string;
+  name: string;
+  description: string;
+}
+
+export interface RemoteKnowledgeDocumentPage {
+  items: Array<{
+    id: string;
+    knowledgeBaseId: string;
+    title: string;
+    parseStatus: string;
+  }>;
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface RemoteKnowledgeConnectionTestResult {
+  knowledgeBaseCount: number;
 }
 
 export interface DeveloperTextTokenStats {
@@ -568,7 +590,13 @@ export interface YibiaoBridge {
     save: (config: ClientConfig) => Promise<ConfigSaveResult>;
     listModels: (config?: ClientConfig) => Promise<ModelListResult>;
     getModelInfo: (modelName: string) => Promise<ModelInfoResult>;
+    getRemoteKnowledgeDefault: () => Promise<RemoteKnowledgeConnectionConfig>;
     openConfigFolder: () => Promise<{ success: boolean; path: string }>;
+  };
+  remoteKnowledge: {
+    testConnection: (config: RemoteKnowledgeConnectionConfig) => Promise<RemoteKnowledgeConnectionTestResult>;
+    listKnowledgeBases: () => Promise<RemoteKnowledgeBase[]>;
+    listDocuments: (input: { knowledgeBaseId: string; page?: number; pageSize?: number }) => Promise<RemoteKnowledgeDocumentPage>;
   };
   license: {
     getStatus: () => Promise<LicenseRuntimeStatus>;

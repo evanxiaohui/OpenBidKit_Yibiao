@@ -91,15 +91,29 @@ function resolveMatchCount(value) {
   return Number.isFinite(count) && count > 0 ? Math.floor(count) : DEFAULT_MATCH_COUNT;
 }
 
+function normalizeConfig(value, fallback) {
+  const source = value && typeof value === 'object' ? value : {};
+  return {
+    base_url: String(source.base_url || fallback?.base_url || ''),
+    api_key: String(source.api_key || fallback?.api_key || ''),
+  };
+}
+
 function createRemoteKnowledgeService({ config, fetchImpl, timeoutMs, retryDelays, remoteKnowledgeClient } = {}) {
-  const client = remoteKnowledgeClient || createRemoteKnowledgeClient({ config, fetchImpl, timeoutMs, retryDelays });
+  const configProvider = typeof config === 'function' ? config : () => config;
+  const clientOptions = { fetchImpl, timeoutMs, retryDelays };
+  const getClient = (override) => {
+    if (remoteKnowledgeClient && !override) return remoteKnowledgeClient;
+    const currentConfig = normalizeConfig(configProvider());
+    return createRemoteKnowledgeClient({ ...clientOptions, config: normalizeConfig(override, currentConfig) });
+  };
 
   async function listKnowledgeBases({ signal } = {}) {
-    return (await client.listKnowledgeBases({ signal })).map(mapKnowledgeBase);
+    return (await getClient().listKnowledgeBases({ signal })).map(mapKnowledgeBase);
   }
 
   async function listDocuments({ knowledgeBaseId, page, pageSize, signal } = {}) {
-    const result = await client.listKnowledge({ knowledgeBaseId, page, pageSize, signal });
+    const result = await getClient().listKnowledge({ knowledgeBaseId, page, pageSize, signal });
     return {
       items: result.items.map((item) => mapDocument(item, knowledgeBaseId)),
       total: result.total,
@@ -111,7 +125,7 @@ function createRemoteKnowledgeService({ config, fetchImpl, timeoutMs, retryDelay
   async function search({ query, scopes, matchCount, signal } = {}) {
     const groups = buildSearchGroups(scopes);
     const resultLimit = resolveMatchCount(matchCount);
-    const resultGroups = await runWithConcurrency(groups, SEARCH_CONCURRENCY, (group) => client.hybridSearch({
+    const resultGroups = await runWithConcurrency(groups, SEARCH_CONCURRENCY, (group) => getClient().hybridSearch({
       query,
       signal,
       ...group,
@@ -119,8 +133,10 @@ function createRemoteKnowledgeService({ config, fetchImpl, timeoutMs, retryDelay
     return resultGroups.flat().map(mapSearchResult).slice(0, resultLimit);
   }
 
-  async function testConnection({ signal } = {}) {
-    const knowledgeBases = await listKnowledgeBases({ signal });
+  async function testConnection(input = {}) {
+    const hasConfigOverride = input && (Object.hasOwn(input, 'base_url') || Object.hasOwn(input, 'api_key'));
+    const signal = hasConfigOverride ? undefined : input?.signal;
+    const knowledgeBases = (await getClient(hasConfigOverride ? input : undefined).listKnowledgeBases({ signal })).map(mapKnowledgeBase);
     return { knowledgeBaseCount: knowledgeBases.length };
   }
 

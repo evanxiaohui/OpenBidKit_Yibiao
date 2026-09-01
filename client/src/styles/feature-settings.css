@@ -1266,3 +1266,34 @@ fieldset.settings-list {
   color: var(--yb-text);
   font-size: 15px;
 }
+
+.remote-knowledge-section {
+  overflow: hidden;
+}
+
+.remote-knowledge-intro {
+  display: grid;
+  gap: 8px;
+  padding: 24px;
+  background: linear-gradient(135deg, rgba(33, 116, 253, 0.09), rgba(255, 255, 255, 0));
+}
+
+.remote-knowledge-intro strong {
+  color: var(--yb-text);
+  font-size: 18px;
+}
+
+.remote-knowledge-intro p {
+  max-width: 660px;
+  margin: 0;
+  color: var(--yb-text-soft);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.remote-knowledge-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 18px 24px 24px;
+}

@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import { trackConfigUsage } from '../../../shared/analytics/analytics';
-import { AppSwitch, DetailHelpLink, FloatingToolbar, InlineSpinner, InputWithAction, OfflineLicenseActivationDialog, useAutoAnswer, useToast } from '../../../shared/ui';
+import { AppDialog, AppSwitch, DetailHelpLink, FloatingToolbar, InlineSpinner, InputWithAction, OfflineLicenseActivationDialog, useAutoAnswer, useToast } from '../../../shared/ui';
 import { showUpdateReadyToast } from '../../../shared/updateToast';
 import type { FloatingToolbarGroup } from '../../../shared/ui';
 import type { AgentModeScenariosConfig, AgentSelfCheckResult, AgentSelfCheckStepStatus, AiRequestMode, ClientConfig, ComponentsConfig, FileParserProvider, ImageModelConfig, ImageModelProfiles, ImageModelProvider, ImageModelRatio, ImageModelSize, ImageModelStatus, LicenseRuntimeStatus, TextModelConfig, TextModelProfiles, TextModelProvider, UpdateChannel } from '../../../shared/types';
 import type { SettingsPageState } from '../types';
 
-type SettingsTab = 'general' | 'text-model' | 'image-model' | 'components' | 'agent' | 'about';
+type SettingsTab = 'general' | 'text-model' | 'image-model' | 'remote-knowledge' | 'components' | 'agent' | 'about';
 type UpdateStatus = 'idle' | 'checking' | 'downloading' | 'downloaded' | 'error' | 'disabled';
 type AgentSelfCheckUiStatus = 'untested' | 'checking' | 'normal' | 'busy' | 'error';
 
@@ -14,6 +14,7 @@ const settingsTabs: Array<{ id: SettingsTab; label: string }> = [
   { id: 'general', label: '通用' },
   { id: 'text-model', label: '文本模型' },
   { id: 'image-model', label: '生图模型' },
+  { id: 'remote-knowledge', label: '远程知识' },
   { id: 'components', label: '组件设置' },
   { id: 'agent', label: '智能体配置' },
   { id: 'about', label: '关于' },
@@ -647,6 +648,7 @@ function SettingsPage({ onDeveloperModeChange }: SettingsPageProps) {
   const [loadingModelInfo, setLoadingModelInfo] = useState(false);
   const [testingTextModel, setTestingTextModel] = useState(false);
   const [testingImageModel, setTestingImageModel] = useState(false);
+  const [testingRemoteKnowledge, setTestingRemoteKnowledge] = useState(false);
   const textModelBusy = loadingModels === 'text' || loadingModelInfo || testingTextModel;
   const [imageTestPreview, setImageTestPreview] = useState<{ src: string; title: string } | null>(null);
   const [appVersion, setAppVersion] = useState('');
@@ -656,6 +658,7 @@ function SettingsPage({ onDeveloperModeChange }: SettingsPageProps) {
   const [updateError, setUpdateError] = useState('');
   const [licenseStatus, setLicenseStatus] = useState<LicenseRuntimeStatus | null>(null);
   const [offlineLicenseDialogOpen, setOfflineLicenseDialogOpen] = useState(false);
+  const [restoreRemoteKnowledgeDialogOpen, setRestoreRemoteKnowledgeDialogOpen] = useState(false);
   const [agentSelfCheckStatus, setAgentSelfCheckStatus] = useState<AgentSelfCheckUiStatus>('untested');
   const [agentSelfCheckResult, setAgentSelfCheckResult] = useState<AgentSelfCheckResult | null>(null);
   const [exportingAgentSelfCheckReport, setExportingAgentSelfCheckReport] = useState(false);
@@ -944,6 +947,57 @@ function SettingsPage({ onDeveloperModeChange }: SettingsPageProps) {
         gpu_hardware_acceleration_configured: true,
       },
     }));
+  };
+
+  const updateRemoteKnowledgeConfig = (partial: Partial<SettingsPageState['remoteKnowledge']>) => {
+    setState((prev) => ({
+      ...prev,
+      remoteKnowledge: {
+        ...prev.remoteKnowledge,
+        ...partial,
+      },
+    }));
+  };
+
+  const testRemoteKnowledgeConnection = async () => {
+    const draft = {
+      base_url: state.remoteKnowledge.base_url.trim(),
+      api_key: state.remoteKnowledge.api_key.trim(),
+    };
+
+    if (!draft.base_url) {
+      showToast('请填写远程知识服务地址', 'info');
+      return;
+    }
+    if (!/^https?:\/\//i.test(draft.base_url)) {
+      showToast('远程知识服务地址必须以 http:// 或 https:// 开头', 'info');
+      return;
+    }
+    if (!draft.api_key) {
+      showToast('请填写远程知识 API Key', 'info');
+      return;
+    }
+
+    try {
+      setTestingRemoteKnowledge(true);
+      const result = await window.yibiao.remoteKnowledge.testConnection(draft);
+      showToast(`连接成功，已读取 ${result.knowledgeBaseCount} 个知识库`, 'success');
+    } catch {
+      showToast('连接失败，请检查服务地址、API Key 和远程服务状态', 'error');
+    } finally {
+      setTestingRemoteKnowledge(false);
+    }
+  };
+
+  const restoreRemoteKnowledgeDefault = async () => {
+    try {
+      const defaults = await window.yibiao.config.getRemoteKnowledgeDefault();
+      updateRemoteKnowledgeConfig(defaults);
+      setRestoreRemoteKnowledgeDialogOpen(false);
+      showToast('已恢复默认配置，请保存后生效', 'info');
+    } catch {
+      showToast('恢复默认配置失败，请稍后重试', 'error');
+    }
   };
 
   const updateAgentModeScenario = (key: keyof AgentModeScenariosConfig, enabled: boolean) => {
@@ -1469,6 +1523,10 @@ function SettingsPage({ onDeveloperModeChange }: SettingsPageProps) {
       return JSON.stringify(componentsFromState(state.components)) !== JSON.stringify(normalizeComponentsState(savedConfig.components));
     }
 
+    if (activeTab === 'remote-knowledge') {
+      return JSON.stringify(state.remoteKnowledge) !== JSON.stringify(savedConfig.remote_knowledge);
+    }
+
     if (activeTab === 'agent') {
       return JSON.stringify(state.agentModeScenarios) !== JSON.stringify(normalizeAgentModeScenarios(savedConfig.agent_mode_scenarios))
         || agentAutoAnswerDraft !== Boolean(savedConfig.agent_auto_answer_enabled);
@@ -1573,6 +1631,10 @@ function SettingsPage({ onDeveloperModeChange }: SettingsPageProps) {
     }
     if (activeTab === 'components') {
       await saveComponentsConfig();
+      return;
+    }
+    if (activeTab === 'remote-knowledge') {
+      await saveClientConfig(createClientConfig());
       return;
     }
     if (activeTab === 'agent') {
@@ -2171,6 +2233,54 @@ function SettingsPage({ onDeveloperModeChange }: SettingsPageProps) {
         </section>
       )}
 
+      {activeTab === 'remote-knowledge' && (
+        <section className="settings-page-section remote-knowledge-section">
+          <div className="remote-knowledge-intro">
+            <span className="section-kicker">远程知识</span>
+            <strong>连接远程知识库</strong>
+            <p>当前接入协议为 WeKnora v0.7.2 或以上版本。API Key 的知识库权限由远程服务管理端控制。</p>
+          </div>
+          <div className="settings-list">
+            <label className="settings-row">
+              <div className="settings-row-copy">
+                <strong>服务地址</strong>
+                <span>填写远程服务的 API 根地址，例如 http://example.com/api/v1</span>
+              </div>
+              <input
+                type="url"
+                value={state.remoteKnowledge.base_url}
+                placeholder="http://example.com/api/v1"
+                onChange={(event) => updateRemoteKnowledgeConfig({ base_url: event.target.value })}
+              />
+            </label>
+            <label className="settings-row">
+              <div className="settings-row-copy">
+                <strong>API Key</strong>
+                <span>用于访问远程知识服务，仅保存在本机配置中</span>
+              </div>
+              <input
+                type="password"
+                value={state.remoteKnowledge.api_key}
+                placeholder="请输入远程知识 API Key"
+                autoComplete="off"
+                onChange={(event) => updateRemoteKnowledgeConfig({ api_key: event.target.value })}
+              />
+            </label>
+          </div>
+          <div className="remote-knowledge-actions">
+            <button type="button" className="secondary-action" disabled={testingRemoteKnowledge} onClick={() => void testRemoteKnowledgeConnection()}>
+              {testingRemoteKnowledge ? '正在测试...' : '测试连接'}
+            </button>
+            <button type="button" className="text-button" disabled={testingRemoteKnowledge} onClick={() => setRestoreRemoteKnowledgeDialogOpen(true)}>
+              恢复默认
+            </button>
+            <button type="button" className="primary-action" disabled={!activeTabDirty || testingRemoteKnowledge} onClick={() => void saveActiveTabConfig()}>
+              保存配置
+            </button>
+          </div>
+        </section>
+      )}
+
       {activeTab === 'components' && (
         <section className="settings-page-section">
           <div className="settings-group-title">文件解析</div>
@@ -2528,6 +2638,19 @@ function SettingsPage({ onDeveloperModeChange }: SettingsPageProps) {
         open={offlineLicenseDialogOpen}
         onOpenChange={setOfflineLicenseDialogOpen}
         onActivated={setLicenseStatus}
+      />
+      <AppDialog
+        open={restoreRemoteKnowledgeDialogOpen}
+        onOpenChange={setRestoreRemoteKnowledgeDialogOpen}
+        kicker="远程知识"
+        title="恢复默认远程知识配置？"
+        description="将用随应用提供的服务地址和 API Key 覆盖当前未保存的远程知识配置；恢复后仍需点击“保存配置”才会生效。"
+        actions={(
+          <>
+            <button type="button" className="secondary-action" onClick={() => setRestoreRemoteKnowledgeDialogOpen(false)}>取消</button>
+            <button type="button" className="primary-action" onClick={() => void restoreRemoteKnowledgeDefault()}>确认恢复</button>
+          </>
+        )}
       />
       <FloatingToolbar groups={settingsToolbarGroups} label="设置保存工具条" />
     </div>
