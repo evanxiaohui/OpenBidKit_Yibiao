@@ -1,7 +1,13 @@
 import { useEffect, useState } from 'react';
 import type { RemoteKnowledgeBase, RemoteKnowledgeDocumentPage } from '../../../shared/types/ipc';
 import type { RemoteKnowledgeScope } from '../types';
-import { isRemoteScopeStale, selectRemoteDocuments, selectWholeKnowledgeBase } from '../remoteKnowledgeSelection';
+import {
+  beginRemoteDocumentSelection,
+  isRemoteDocumentSelectionDisabled,
+  isRemoteScopeStale,
+  selectRemoteDocuments,
+  selectWholeKnowledgeBase,
+} from '../remoteKnowledgeSelection';
 
 interface Props {
   scopes: RemoteKnowledgeScope[];
@@ -21,8 +27,7 @@ export default function RemoteKnowledgePicker({ scopes, disabled = false, onChan
   const loadBases = async () => {
     setLoading(true); setError('');
     try {
-      const config = await window.yibiao?.config.getRemoteKnowledgeDefault();
-      const fingerprint = config?.base_url || '';
+      const fingerprint = await window.yibiao?.remoteKnowledge.getEndpointFingerprint() || '';
       setEndpointFingerprint(fingerprint);
       setBases(await window.yibiao?.remoteKnowledge.listKnowledgeBases() || []);
     } catch (e) { setError(e instanceof Error ? e.message : '读取远程知识库失败'); }
@@ -47,11 +52,14 @@ export default function RemoteKnowledgePicker({ scopes, disabled = false, onChan
       return <section className="remote-knowledge-base" key={base.id}>
         <div className="remote-knowledge-base-head"><strong>{base.name}</strong><div>
           <button type="button" disabled={disabled} onClick={() => onChange(selectWholeKnowledgeBase(scopes, base, endpointFingerprint))}>{current?.mode === 'all' ? '已选整个知识库' : '选择整个知识库'}</button>
-          <button type="button" disabled={disabled} onClick={() => void loadDocuments(base.id, 1)}>查看文档</button>
+          <button type="button" disabled={disabled} onClick={() => {
+            if (current?.mode === 'all') onChange(beginRemoteDocumentSelection(scopes, base.id));
+            void loadDocuments(base.id, 1);
+          }}>{current?.mode === 'all' ? '改选文档' : '查看文档'}</button>
         </div></div>
         {stale && <small className="outline-knowledge-stale">连接配置已变化，请重新选择</small>}
         {docs && <div className="remote-knowledge-documents">{docs.items.map((doc) => <label key={doc.id}>
-          <input type="checkbox" disabled={disabled} checked={current?.mode === 'documents' && current.documents.some((item) => item.knowledgeId === doc.id)} onChange={() => {
+          <input type="checkbox" disabled={isRemoteDocumentSelectionDisabled(current, disabled)} checked={current?.mode === 'documents' && current.documents.some((item) => item.knowledgeId === doc.id)} onChange={() => {
             const selected = current?.mode === 'documents' ? current.documents : [];
             const selectedInBase = current?.mode === 'documents' && current.documents.some((item) => item.knowledgeId === doc.id);
             const next = selectedInBase ? selected.filter((item) => item.knowledgeId !== doc.id) : [...selected, { knowledgeId: doc.id, title: doc.title }];

@@ -132,6 +132,20 @@ async function runPersistenceAssertions() {
     const restartedStore = createStore(app, restartedDatabase.db);
     assert.deepEqual(restartedStore.loadTechnicalPlan().remoteKnowledgeScopes.map((scope) => scope.knowledgeBaseId), ['kb-2', 'kb-1']);
 
+    restartedStore.saveOutlineConfig({
+      referenceKnowledgeDocumentIds: ['local-before-switch'],
+      remoteKnowledgeScopes: [{
+        knowledgeBaseId: 'kb-before-switch',
+        knowledgeBaseName: '切换前规范',
+        mode: 'all',
+        endpointFingerprint: 'fingerprint-a',
+      }],
+    });
+    restartedStore.switchWorkflowKind('existing-plan-expansion');
+    assert.equal(restartedDatabase.db.prepare('SELECT COUNT(*) AS count FROM technical_plan_reference_docs').get().count, 0);
+    assert.equal(restartedDatabase.db.prepare('SELECT COUNT(*) AS count FROM technical_plan_remote_knowledge_documents').get().count, 0);
+    assert.equal(restartedDatabase.db.prepare('SELECT COUNT(*) AS count FROM technical_plan_remote_knowledge_scopes').get().count, 0);
+
     restartedStore.saveBidAnalysisConfig({ mode: 'key', selectedTaskIds: [], bidSectionMode: 'multiple' });
     assert.equal(restartedDatabase.db.prepare('SELECT COUNT(*) AS count FROM technical_plan_remote_knowledge_documents').get().count, 0);
     assert.equal(restartedDatabase.db.prepare('SELECT COUNT(*) AS count FROM technical_plan_remote_knowledge_scopes').get().count, 0);

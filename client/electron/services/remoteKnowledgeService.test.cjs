@@ -140,6 +140,47 @@ test('caps merged generic remote knowledge results to the requested match count'
   assert.deepEqual(results.map((result) => result.chunkId), ['chunk-1', 'chunk-2']);
 });
 
+test('deduplicates and score-sorts all mixed-scope results before applying the match count', async () => {
+  const service = createServiceWithFetch(async (_url, init) => {
+    const body = JSON.parse(init.body);
+    if (Object.hasOwn(body, 'knowledge_ids')) {
+      return jsonResponse({ success: true, data: [
+        { id: 'duplicate', knowledge_base_id: 'kb-a', knowledge_id: 'doc-1', content: 'higher duplicate', score: 0.95 },
+        { id: 'later-high', knowledge_base_id: 'kb-b', knowledge_id: 'doc-2', content: 'later high', score: 0.9 },
+      ] });
+    }
+    return jsonResponse({ success: true, data: [
+      { id: 'early-low', knowledge_base_id: 'kb-a', knowledge_id: 'doc-1', content: 'early low', score: 0.1 },
+      { id: 'duplicate', knowledge_base_id: 'kb-a', knowledge_id: 'doc-1', content: 'lower duplicate', score: 0.2 },
+    ] });
+  });
+
+  const results = await service.search({
+    query: '施工组织设计',
+    scopes: [
+      { knowledgeBaseId: 'kb-a', mode: 'all', documents: [] },
+      { knowledgeBaseId: 'kb-b', mode: 'documents', documents: [{ knowledgeId: 'doc-2', title: '规范' }] },
+    ],
+    matchCount: 2,
+  });
+
+  assert.deepEqual(results.map((result) => [result.chunkId, result.content, result.score]), [
+    ['duplicate', 'higher duplicate', 0.95],
+    ['later-high', 'later high', 0.9],
+  ]);
+});
+
+test('exposes a normalized endpoint SHA-256 fingerprint without including the API key', () => {
+  let current = { base_url: 'http://remote.example/api/v1/', api_key: 'first-secret' };
+  const service = createRemoteKnowledgeService({ config: () => current, remoteKnowledgeClient: {} });
+
+  assert.equal(service.getEndpointFingerprint(), '82980d7dc96cd9025127c34021c8f59c2d7261628452211cea69a3fad72736df');
+  current = { base_url: 'http://remote.example/api/v1', api_key: 'second-secret' };
+  assert.equal(service.getEndpointFingerprint(), '82980d7dc96cd9025127c34021c8f59c2d7261628452211cea69a3fad72736df');
+  current = { base_url: 'http://other.example/api/v1', api_key: 'second-secret' };
+  assert.equal(service.getEndpointFingerprint(), '96a5be4371fa01acff15650dc6f6129933cc32a2535c2a5c28434895805bf227');
+});
+
 test('testConnection rejects a server without the v0.7.2 knowledge-base shape', async () => {
   const service = createServiceWithFetch(async () => jsonResponse({ success: true, data: [{ id: 'kb-a' }] }));
 
@@ -151,9 +192,37 @@ test('testConnection rejects a server without the v0.7.2 knowledge-base shape', 
 });
 
 test('testConnection reports a valid v0.7.2 knowledge-base list', async () => {
-  const service = createServiceWithFetch(async () => jsonResponse({ success: true, data: [{ id: 'kb-a', name: '施工规范' }] }));
+  const calls = [];
+  const service = createServiceWithFetch(async (url) => {
+    calls.push(url);
+    if (url.endsWith('/knowledge-bases')) {
+      return jsonResponse({ success: true, data: [{ id: 'kb-a', name: '施工规范' }] });
+    }
+    return jsonResponse({ success: true, data: [{
+      id: 'chunk-1', knowledge_base_id: 'kb-a', knowledge_id: 'doc-1', content: '连接测试片段', score: 0.8,
+    }] });
+  });
 
   assert.deepEqual(await service.testConnection(), {
     knowledgeBaseCount: 1,
+  });
+  assert.deepEqual(calls, [
+    'http://remote.example/api/v1/knowledge-bases',
+    'http://remote.example/api/v1/knowledge-search',
+  ]);
+});
+
+test('testConnection rejects search responses missing required v0.7.2 fields', async () => {
+  const service = createServiceWithFetch(async (url) => {
+    if (url.endsWith('/knowledge-bases')) {
+      return jsonResponse({ success: true, data: [{ id: 'kb-a', name: '施工规范' }] });
+    }
+    return jsonResponse({ success: true, data: [{ id: 'chunk-1', content: '缺少来源字段' }] });
+  });
+
+  await assert.rejects(service.testConnection(), (error) => {
+    assert.equal(error.category, 'incompatible');
+    assert.equal(error.message, '远程知识服务版本不受支持，请升级到 v0.7.2 或以上');
+    return true;
   });
 });

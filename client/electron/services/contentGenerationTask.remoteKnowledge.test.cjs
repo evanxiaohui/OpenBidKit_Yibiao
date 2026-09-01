@@ -31,9 +31,15 @@ test('远程条目使用稳定命名空间并可从 runtime 快照恢复正文�
   });
   assert.equal(item.id, 'remote:kb-1:doc-2:chunk-3');
   const runtime = normalizeContentGenerationRuntime({
-    remoteKnowledgeReferencesBySection: { section1: [item] },
+    remoteKnowledgeReferencesBySection: {
+      section1: [item],
+      section2: [{ ...item, id: 'remote:kb-1:doc-2:chunk-4', knowledgeId: 'doc-2', chunkId: 'chunk-4', content: '其他小节素材' }],
+    },
   });
-  assert.deepEqual(resolveRemoteKnowledgeContents(['remote:kb-1:doc-2:chunk-3'], runtime), ['应按规范组织验收']);
+  assert.deepEqual(resolveRemoteKnowledgeContents([
+    'remote:kb-1:doc-2:chunk-3',
+    'remote:kb-1:doc-2:chunk-4',
+  ], runtime, 'section1'), ['应按规范组织验收']);
   assert.deepEqual(normalizeContentGenerationRuntime(undefined).remoteKnowledgeReferencesBySection, {});
 });
 
@@ -130,4 +136,119 @@ test('失败章节重试保留锁定远程片段且不发起第二次检索', as
 
   assert.equal(searches.length, 0);
   assert.match(chatMessages.at(-1).map((message) => message.content).join('\n'), /锁定远程质量控制片段/);
+});
+
+test('并发正文编排和生成仅使用当前小节的远程候选与锁定快照', async () => {
+  const sectionIds = ['s1', 's2', 's3'];
+  const remoteReferences = Object.fromEntries(sectionIds.map((sectionId, index) => [sectionId, {
+    id: `remote:kb-1:doc-${sectionId}:chunk-${sectionId}`,
+    knowledgeBaseId: 'kb-1',
+    knowledgeId: `doc-${sectionId}`,
+    chunkId: `chunk-${sectionId}`,
+    title: `远程标题-${sectionId}`,
+    content: `远程正文-${sectionId}`,
+    score: 0.9 - index * 0.1,
+  }]));
+  const state = {
+    workflowKind: 'technical-plan',
+    referenceKnowledgeDocumentIds: ['local-doc'],
+    outlineData: {
+      project_overview: '智慧水务',
+      outline: sectionIds.map((id) => ({ id, title: `章节-${id}`, description: `目标-${id}`, content_mode: 'ai-generate' })),
+    },
+    globalFacts: [{ title: '工期', content: '180 日历天' }],
+    globalFactsTask: { status: 'success' },
+    contentGenerationOptions: {
+      enableConsistencyAudit: false, useAiImages: false, useMermaidImages: false, useHtmlImages: false,
+      tableRequirement: 'none', maxAiImages: 0, maxMermaidImages: 0, maxHtmlImages: 0, htmlImageTypes: '',
+    },
+    contentGenerationSections: {},
+    contentGenerationPlans: {},
+  };
+  const plannerPrompts = new Map();
+  const generationPrompts = new Map();
+  let concurrentPlannerCount = 0;
+  let releaseConcurrentPlanners;
+  const concurrentPlannersReady = new Promise((resolve) => { releaseConcurrentPlanners = resolve; });
+  const workspaceStore = {
+    loadTechnicalPlan: () => structuredClone(state),
+    updateTechnicalPlanWithoutReload: (patch) => Object.assign(state, patch),
+  };
+  const checkpointTask = (taskPatch, workspacePatch = {}) => {
+    Object.assign(state, workspacePatch);
+    const item = workspacePatch.contentGenerationItem;
+    if (item?.section) state.contentGenerationSections = { ...state.contentGenerationSections, [item.nodeId]: item.section };
+    if (item?.storedPlan) state.contentGenerationPlans = { ...state.contentGenerationPlans, [item.nodeId]: item.storedPlan };
+    if (item && Object.hasOwn(item, 'runtime')) state.contentGenerationRuntime = item.runtime;
+    if (Object.hasOwn(workspacePatch, 'contentGenerationRuntime')) state.contentGenerationRuntime = workspacePatch.contentGenerationRuntime;
+    state.contentGenerationTask = { ...(state.contentGenerationTask || {}), ...taskPatch };
+    return { task: state.contentGenerationTask };
+  };
+  const getSectionId = (messages) => messages.map((message) => message.content).join('\n').match(/章节ID:\s*(s[1-3])/)?.[1];
+  const aiService = {
+    getConfig: () => ({ concurrency_limit: 2 }),
+    collectJsonResponse: async ({ messages, normalizer }) => {
+      const prompt = messages.map((message) => message.content).join('\n');
+      const sectionId = getSectionId(messages);
+      assert.ok(sectionId);
+      plannerPrompts.set(sectionId, prompt);
+      if (sectionId !== 's1') {
+        concurrentPlannerCount += 1;
+        if (concurrentPlannerCount === 2) releaseConcurrentPlanners();
+        await concurrentPlannersReady;
+      }
+      return normalizer({
+        writing_focus: `编写 ${sectionId}`,
+        knowledge: { item_ids: [sectionId === 's3' ? remoteReferences.s2.id : remoteReferences[sectionId].id] },
+        facts: { titles: [] },
+        table: { needed: false, purpose: '' },
+      });
+    },
+    chat: async ({ messages }) => {
+      const prompt = messages.map((message) => message.content).join('\n');
+      const sectionId = sectionIds.find((id) => prompt.includes(`章节-${id}`));
+      assert.ok(sectionId);
+      generationPrompts.set(sectionId, prompt);
+      return `正文-${sectionId}`;
+    },
+  };
+  const knowledgeBaseService = {
+    readReferences: () => [{
+      document: { id: 'local-doc', status: 'success' },
+      items: [{ id: 'local-item', title: '本地标题', resume: '本地摘要', content: '本地正文' }],
+    }],
+  };
+  const knowledgeSession = {
+    searchRemote: async ({ query }) => {
+      const sectionId = sectionIds.find((id) => query.includes(`章节-${id}`));
+      return sectionId ? [remoteReferences[sectionId]] : [];
+    },
+  };
+  const taskControl = { signal: new AbortController().signal, isPauseRequested: () => false };
+
+  await runContentGenerationTask({
+    aiService,
+    agentService: {},
+    workspaceStore,
+    knowledgeBaseService,
+    knowledgeSession,
+    updateTask: (patch) => ({ ...(state.contentGenerationTask || {}), ...patch }),
+    checkpointTask,
+    payload: {},
+    taskControl,
+    previousState: structuredClone(state),
+  });
+
+  for (const sectionId of sectionIds) {
+    const prompt = plannerPrompts.get(sectionId) || '';
+    assert.match(prompt, /local-doc::local-item/);
+    assert.match(prompt, new RegExp(remoteReferences[sectionId].id));
+    for (const otherId of sectionIds.filter((id) => id !== sectionId)) {
+      assert.doesNotMatch(prompt, new RegExp(remoteReferences[otherId].id));
+    }
+  }
+  assert.deepEqual(state.contentGenerationPlans.s3.plan.knowledge.item_ids, []);
+  assert.match(generationPrompts.get('s2') || '', /远程正文-s2/);
+  assert.doesNotMatch(generationPrompts.get('s2') || '', /远程正文-s1|远程正文-s3/);
+  assert.doesNotMatch(generationPrompts.get('s3') || '', /远程正文-s1|远程正文-s2|远程正文-s3/);
 });

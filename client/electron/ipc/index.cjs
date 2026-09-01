@@ -276,7 +276,7 @@ function registerWorkspaceDatabaseServices({ app, configStore, aiService, agentS
 
   clearWorkspaceDatabaseIpc();
   registerKnowledgeBaseIpc({ knowledgeBaseService });
-  registerTechnicalPlanIpc({ technicalPlanStore, taskService });
+  registerTechnicalPlanIpc({ technicalPlanStore, taskService, remoteKnowledgeService });
   registerFeasibilityReportIpc({ feasibilityReportStore, taskService });
   registerDuplicateCheckIpc({ duplicateCheckStore });
   registerRejectionCheckIpc({ rejectionCheckStore, taskService });

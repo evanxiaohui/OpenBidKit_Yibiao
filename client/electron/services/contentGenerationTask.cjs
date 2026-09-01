@@ -2149,10 +2149,10 @@ function resolveKnowledgeContents(itemIds, knowledgeContentMap) {
   return contents;
 }
 
-function resolveRemoteKnowledgeContents(itemIds, runtime) {
+function resolveRemoteKnowledgeContents(itemIds, runtime, sectionId) {
   const selected = new Set(normalizeKnowledgeItemIds(itemIds));
-  if (!selected.size) return [];
-  const references = Object.values(runtime?.remoteKnowledgeReferencesBySection || {}).flat();
+  if (!selected.size || !sectionId) return [];
+  const references = runtime?.remoteKnowledgeReferencesBySection?.[sectionId] || [];
   const seen = new Set();
   return references
     .filter((item) => selected.has(item.id) && item.content && !seen.has(item.id) && seen.add(item.id))
@@ -3493,14 +3493,15 @@ async function runContentGenerationTask({ aiService, agentService, workspaceStor
   knowledgeItems = knowledgeReferences.items;
   allowedKnowledgeItemIds = new Set(knowledgeItems.map((item) => item.id));
   knowledgeContentMap = knowledgeReferences.contentMap;
-  for (const references of Object.values(contentRuntime.remoteKnowledgeReferencesBySection || {})) {
-    for (const reference of references) {
+
+  function getAllowedKnowledgeItemIdsForSection(itemId, currentRemoteReferences = []) {
+    const allowed = new Set(allowedKnowledgeItemIds);
+    const lockedReferences = contentRuntime.remoteKnowledgeReferencesBySection?.[itemId] || [];
+    for (const reference of [...lockedReferences, ...currentRemoteReferences]) {
       const normalized = namespaceRemoteKnowledgeItem(reference);
-      if (!normalized.content) continue;
-      allowedKnowledgeItemIds.add(normalized.id);
-      knowledgeItems.push({ id: normalized.id, title: normalized.title, resume: normalized.content.slice(0, 240) });
-      knowledgeContentMap.set(normalized.id, { content: normalized.content });
+      if (normalized.content) allowed.add(normalized.id);
     }
+    return allowed;
   }
 
   function getLeafContentForWords(item) {
@@ -3810,8 +3811,8 @@ async function runContentGenerationTask({ aiService, agentService, workspaceStor
     return normalizeStoredContentPlan(storedContentPlans[itemId]);
   }
 
-  function applyCurrentTableRequirementToPlan(plan) {
-    const normalizedPlan = normalizeContentPlan(plan, allowedKnowledgeItemIds, allowedFactTitles);
+  function applyCurrentTableRequirementToPlan(plan, itemId) {
+    const normalizedPlan = normalizeContentPlan(plan, getAllowedKnowledgeItemIdsForSection(itemId), allowedFactTitles);
     return tableRequirement === 'none' ? clearContentPlanTable(normalizedPlan) : normalizedPlan;
   }
 
@@ -3822,7 +3823,7 @@ async function runContentGenerationTask({ aiService, agentService, workspaceStor
     }
     return {
       ...storedContentPlan,
-      plan: applyCurrentTableRequirementToPlan(storedContentPlan.plan),
+      plan: applyCurrentTableRequirementToPlan(storedContentPlan.plan, itemId),
     };
   }
 
@@ -3974,13 +3975,6 @@ async function runContentGenerationTask({ aiService, agentService, workspaceStor
       const references = (Array.isArray(found) ? found : [])
         .map(namespaceRemoteKnowledgeItem)
         .filter((item) => item.content && item.knowledgeBaseId && item.knowledgeId && item.chunkId);
-      for (const reference of references) {
-        if (!allowedKnowledgeItemIds.has(reference.id)) {
-          allowedKnowledgeItemIds.add(reference.id);
-          knowledgeItems.push({ id: reference.id, title: reference.title, resume: reference.content.slice(0, 240) });
-        }
-        knowledgeContentMap.set(reference.id, { content: reference.content });
-      }
       return references;
     } catch (error) {
       if (isPauseLikeError(error)) throw error;
@@ -3993,6 +3987,15 @@ async function runContentGenerationTask({ aiService, agentService, workspaceStor
     const { item, parentChapters, siblingChapters } = context;
     let contentPlan;
     const remoteReferences = await retrieveRemoteKnowledgeForPlanning(context);
+    const sectionKnowledgeItems = [
+      ...knowledgeItems,
+      ...remoteReferences.map((reference) => ({
+        id: reference.id,
+        title: reference.title,
+        resume: reference.content.slice(0, 240),
+      })),
+    ];
+    const sectionAllowedKnowledgeItemIds = getAllowedKnowledgeItemIdsForSection(item.id, remoteReferences);
 
     try {
       contentPlan = await aiService.collectJsonResponse({
@@ -4007,19 +4010,19 @@ async function runContentGenerationTask({ aiService, agentService, workspaceStor
           tableRequirement,
           maxTables,
           tableTotalSections: leaves.length,
-          knowledgeItems,
+          knowledgeItems: sectionKnowledgeItems,
         }),
         logTitle: `正文编排-${item.id}-${item.title || '未命名章节'}`,
         progressLabel: '正文编排决策',
         failureMessage: '模型返回的正文编排决策格式无效',
-        normalizer: (value) => normalizeContentPlan(value, allowedKnowledgeItemIds, allowedFactTitles),
+        normalizer: (value) => normalizeContentPlan(value, sectionAllowedKnowledgeItemIds, allowedFactTitles),
         validator: validateContentPlan,
       });
     } catch (error) {
       if (isPauseLikeError(error)) {
         throw error;
       }
-      contentPlan = normalizeContentPlan({}, allowedKnowledgeItemIds, allowedFactTitles);
+      contentPlan = normalizeContentPlan({}, sectionAllowedKnowledgeItemIds, allowedFactTitles);
       logs = [...logs, `编排失败：${item.id} ${item.title || '未命名章节'}，${error.message || '模型返回无效'}，将按纯正文生成。`];
     }
 
@@ -4322,7 +4325,7 @@ async function runContentGenerationTask({ aiService, agentService, workspaceStor
         selectedKnowledgeIds.filter((id) => !String(id).startsWith('remote:')),
         knowledgeContentMap,
       );
-      const remoteKnowledgeContents = resolveRemoteKnowledgeContents(selectedKnowledgeIds, contentRuntime);
+      const remoteKnowledgeContents = resolveRemoteKnowledgeContents(selectedKnowledgeIds, contentRuntime, item.id);
       const knowledgeContents = [...localKnowledgeContents, ...remoteKnowledgeContents];
       const selectedFactsText = resolveSelectedFactsText(contentPlan, globalFacts);
       const generationTarget = computeGenerationWordTarget(wordControl, leaves.length);

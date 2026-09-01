@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 // @ts-ignore Node 22 executes TypeScript test modules directly.
 import {
   clearRemoteSelections,
+  beginRemoteDocumentSelection,
+  isRemoteDocumentSelectionDisabled,
   isRemoteScopeStale,
   selectRemoteDocuments,
   selectWholeKnowledgeBase,
@@ -53,4 +55,24 @@ test('mixed scopes can be cleared without affecting local selection', () => {
 test('fingerprint mismatch marks a scope stale', () => {
   assert.equal(isRemoteScopeStale(scope('kb-1', 'all', [], 'old'), 'new'), true);
   assert.equal(isRemoteScopeStale(scope('kb-1', 'all', [], 'same'), 'same'), false);
+});
+
+test('whole-library mode disables document checkboxes and has no retained document checks', () => {
+  const wholeLibrary = selectWholeKnowledgeBase([
+    scope('kb-1', 'documents', ['doc-1']),
+  ], remoteBase('kb-1'), 'fp-1')[0];
+
+  assert.deepEqual(wholeLibrary.documents, []);
+  assert.equal(isRemoteDocumentSelectionDisabled(wholeLibrary, false), true);
+  assert.equal(isRemoteDocumentSelectionDisabled(scope('kb-1', 'documents', ['doc-1']), false), false);
+  assert.equal(isRemoteDocumentSelectionDisabled(scope('kb-1', 'documents', ['doc-1']), true), true);
+});
+
+test('beginning document selection cancels only the active whole-library scope first', () => {
+  const next = beginRemoteDocumentSelection([
+    scope('kb-1', 'all'),
+    scope('kb-2', 'documents', ['doc-2']),
+  ], 'kb-1');
+
+  assert.deepEqual(next, [scope('kb-2', 'documents', ['doc-2'])]);
 });

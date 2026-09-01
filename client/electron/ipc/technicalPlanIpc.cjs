@@ -1,6 +1,16 @@
 const { ipcMain, shell } = require('electron');
 
-function registerTechnicalPlanIpc({ technicalPlanStore, taskService }) {
+function saveOutlineConfig({ technicalPlanStore, remoteKnowledgeService }, payload) {
+  const currentFingerprint = remoteKnowledgeService.getEndpointFingerprint();
+  const hasStaleScope = (Array.isArray(payload?.remoteKnowledgeScopes) ? payload.remoteKnowledgeScopes : [])
+    .some((scope) => scope?.endpointFingerprint !== currentFingerprint);
+  if (hasStaleScope) {
+    throw new Error('远程知识服务地址已变更，请重新选择远程知识范围');
+  }
+  return technicalPlanStore.saveOutlineConfig(payload);
+}
+
+function registerTechnicalPlanIpc({ technicalPlanStore, taskService, remoteKnowledgeService }) {
   ipcMain.handle('technical-plan:load-state', () => technicalPlanStore.loadTechnicalPlan());
   ipcMain.handle('technical-plan:import-tender-document', (_event, filePaths) => taskService.importTenderDocument(filePaths));
   ipcMain.handle('technical-plan:remove-tender-document', (_event, sourceId) => taskService.removeTenderDocument(sourceId));
@@ -14,7 +24,7 @@ function registerTechnicalPlanIpc({ technicalPlanStore, taskService }) {
   ipcMain.handle('technical-plan:set-workflow-kind', (_event, workflowKind) => technicalPlanStore.setWorkflowKind(workflowKind));
   ipcMain.handle('technical-plan:switch-workflow-kind', (_event, workflowKind) => technicalPlanStore.switchWorkflowKind(workflowKind));
   ipcMain.handle('technical-plan:save-bid-analysis-config', (_event, payload) => technicalPlanStore.saveBidAnalysisConfig(payload));
-  ipcMain.handle('technical-plan:save-outline-config', (_event, payload) => technicalPlanStore.saveOutlineConfig(payload));
+  ipcMain.handle('technical-plan:save-outline-config', (_event, payload) => saveOutlineConfig({ technicalPlanStore, remoteKnowledgeService }, payload));
   ipcMain.handle('technical-plan:save-outline-selection', (_event, payload) => technicalPlanStore.saveOutlineSelection(payload));
   ipcMain.handle('technical-plan:save-outline', (_event, outlineData) => technicalPlanStore.saveOutline(outlineData));
   ipcMain.handle('technical-plan:save-global-facts-config', (_event, payload) => technicalPlanStore.saveGlobalFactsConfig(payload));
@@ -37,4 +47,5 @@ function registerTechnicalPlanIpc({ technicalPlanStore, taskService }) {
 
 module.exports = {
   registerTechnicalPlanIpc,
+  saveOutlineConfig,
 };

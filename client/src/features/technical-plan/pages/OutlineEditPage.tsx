@@ -580,8 +580,7 @@ function OutlineEditPage({
 
   const ensureRemoteScopesFresh = async () => {
     if (!draftRemoteKnowledgeScopes.length) return true;
-    const config = await window.yibiao?.config.getRemoteKnowledgeDefault();
-    const fingerprint = config?.base_url || '';
+    const fingerprint = await window.yibiao?.remoteKnowledge.getEndpointFingerprint() || '';
     if (draftRemoteKnowledgeScopes.some((scope) => isRemoteScopeStale(scope, fingerprint))) {
       showToast('远程知识选择已过期，请切换到远程知识并重新选择', 'info');
       return false;

@@ -624,6 +624,7 @@ export interface YibiaoBridge {
   };
   remoteKnowledge: {
     testConnection: (config: RemoteKnowledgeConnectionConfig) => Promise<RemoteKnowledgeConnectionTestResult>;
+    getEndpointFingerprint: () => Promise<string>;
     listKnowledgeBases: () => Promise<RemoteKnowledgeBase[]>;
     listDocuments: (input: { knowledgeBaseId: string; page?: number; pageSize?: number }) => Promise<RemoteKnowledgeDocumentPage>;
     getPendingDecision: () => Promise<RemoteKnowledgeDecision | null>;

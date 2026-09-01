@@ -74,6 +74,7 @@ const bridge = {
   },
   remoteKnowledge: {
     testConnection: (config) => ipcRenderer.invoke('remote-knowledge:test-connection', config),
+    getEndpointFingerprint: () => ipcRenderer.invoke('remote-knowledge:get-endpoint-fingerprint'),
     listKnowledgeBases: () => ipcRenderer.invoke('remote-knowledge:list-knowledge-bases'),
     listDocuments: (input) => ipcRenderer.invoke('remote-knowledge:list-documents', input),
     getPendingDecision: () => ipcRenderer.invoke('remote-knowledge:get-pending-decision'),

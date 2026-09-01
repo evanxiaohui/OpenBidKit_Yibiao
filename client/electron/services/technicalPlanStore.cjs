@@ -1856,6 +1856,9 @@ function createTechnicalPlanStore({ app, db, fileService, agentService, taskLogS
     deleteOutlineAgentTask();
     deleteGlobalFactsAgentTask();
     db.prepare(`DELETE FROM technical_plan_tasks WHERE type IN (${originalPlanDownstreamTaskTypes.map(() => '?').join(', ')})`).run(...originalPlanDownstreamTaskTypes);
+    db.prepare('DELETE FROM technical_plan_reference_docs').run();
+    db.prepare('DELETE FROM technical_plan_remote_knowledge_documents').run();
+    db.prepare('DELETE FROM technical_plan_remote_knowledge_scopes').run();
     db.prepare('DELETE FROM technical_plan_content_sections').run();
     db.prepare('DELETE FROM technical_plan_content_plans').run();
     db.prepare('DELETE FROM technical_plan_outline_nodes').run();

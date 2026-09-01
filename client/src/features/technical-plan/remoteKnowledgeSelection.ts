@@ -9,6 +9,14 @@ export function isRemoteScopeStale(scope: RemoteKnowledgeScope, currentFingerpri
   return scope.endpointFingerprint !== currentFingerprint;
 }
 
+export function isRemoteDocumentSelectionDisabled(scope: RemoteKnowledgeScope | undefined, disabled: boolean): boolean {
+  return disabled || scope?.mode === 'all';
+}
+
+export function beginRemoteDocumentSelection(scopes: RemoteKnowledgeScope[], knowledgeBaseId: string): RemoteKnowledgeScope[] {
+  return scopes.filter((scope) => scope.knowledgeBaseId !== knowledgeBaseId || scope.mode !== 'all');
+}
+
 export function selectWholeKnowledgeBase(
   scopes: RemoteKnowledgeScope[],
   knowledgeBase: RemoteKnowledgeBase,

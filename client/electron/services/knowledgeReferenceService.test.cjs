@@ -4,16 +4,18 @@ const test = require('node:test');
 const { createKnowledgeReferenceService } = require('./knowledgeReferenceService.cjs');
 
 function createSession(overrides = {}) {
+  const { sessionInput = {}, ...serviceOverrides } = overrides;
   const local = {
     readReferences: () => [{ document: { id: 'local-doc', file_name: '本地规范' }, items: [
       { id: 'local-item', title: '本地条目', resume: '本地摘要', content: '本地内容' },
     ] }],
   };
   const remote = { search: async () => [] };
-  return createKnowledgeReferenceService({ knowledgeBaseService: local, remoteKnowledgeService: remote, ...overrides })
+  return createKnowledgeReferenceService({ knowledgeBaseService: local, remoteKnowledgeService: remote, ...serviceOverrides })
     .createTaskSession({
       taskId: 'task-1', workflow: 'technical-plan', localDocumentIds: ['local-doc'],
       remoteScopes: [{ knowledgeBaseId: 'kb-1', mode: 'all', documents: [] }],
+      ...sessionInput,
     });
 }
 
@@ -76,4 +78,27 @@ test('fails endpoint mismatch and falls back to local references', async () => {
   const result = await session.loadReferences({ stage: 'outline', query: '项目' });
   assert.equal(result.local[0].id, 'local:local-doc:local-item');
   assert.deepEqual(result.remote, []);
+});
+
+test('never sends stale scope resource IDs to the current remote endpoint', async () => {
+  let searchCalls = 0;
+  let decisionError;
+  const session = createSession({
+    remoteKnowledgeService: {
+      getEndpointFingerprint: () => 'current-endpoint',
+      search: async () => { searchCalls += 1; return []; },
+    },
+    remoteKnowledgeDecisionService: {
+      waitForDecision: async ({ error }) => { decisionError = error; return 'disable-and-continue'; },
+      cancelTask() {},
+    },
+    sessionInput: {
+      remoteScopes: [{ knowledgeBaseId: 'kb-1', mode: 'all', endpointFingerprint: 'old-endpoint', documents: [] }],
+    },
+  });
+
+  assert.deepEqual(await session.searchRemote({ stage: 'outline', query: '项目' }), []);
+  assert.equal(searchCalls, 0);
+  assert.equal(decisionError?.category, 'endpoint-mismatch');
+  assert.match(decisionError?.message || '', /重新选择/);
 });

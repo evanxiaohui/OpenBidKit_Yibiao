@@ -46,43 +46,67 @@ function createKnowledgeReferenceService({ knowledgeBaseService, remoteKnowledge
       return (Array.isArray(entries) ? entries : []).flatMap(mapLocalReference);
     };
 
+    function getScopeCompatibilityError() {
+      if (!session.remoteScopes.length || typeof remoteKnowledgeService?.getEndpointFingerprint !== 'function') return null;
+      const currentFingerprint = String(remoteKnowledgeService.getEndpointFingerprint() || '');
+      const incompatible = !currentFingerprint || session.remoteScopes.some((scope) => String(scope?.endpointFingerprint || '') !== currentFingerprint);
+      if (!incompatible) return null;
+      const error = new Error('远程知识选择与当前服务地址不匹配，请重新选择');
+      error.category = 'endpoint-mismatch';
+      return error;
+    }
+
     session.searchRemote = async ({ stage, query, matchCount = DEFAULT_MATCH_COUNT } = {}) => {
       if (session.remoteDisabledForRun || !remoteKnowledgeService || typeof remoteKnowledgeService.search !== 'function') return [];
       const limit = normalizeCount(matchCount);
-      while (!session.remoteDisabledForRun && !session.disposed) {
-        if (session.pendingDecision) {
-          const action = await session.pendingDecision;
-          if (action === 'disable-and-continue') {
-            session.remoteDisabledForRun = true;
-            return [];
+      let joinedDecisionWait = false;
+      const joinDecisionWait = () => {
+        if (joinedDecisionWait) return;
+        joinedDecisionWait = true;
+        taskControl?.beginRemoteKnowledgeDecisionWait?.();
+      };
+      try {
+        while (!session.remoteDisabledForRun && !session.disposed) {
+          if (session.pendingDecision) {
+            joinDecisionWait();
+            const action = await session.pendingDecision;
+            if (action === 'disable-and-continue') {
+              session.remoteDisabledForRun = true;
+              return [];
+            }
+            continue;
           }
-          continue;
-        }
-        try {
-          const found = await remoteKnowledgeService.search({ query, scopes: session.remoteScopes, matchCount: limit, signal: session.signal });
-          const unique = new Map();
-          for (const item of (Array.isArray(found) ? found : [])) {
-            const key = remoteKey(item);
-            const current = unique.get(key);
-            if (!current || Number(item.score || 0) > Number(current.score || 0)) unique.set(key, item);
-          }
-          return [...unique.values()].sort((a, b) => Number(b.score || 0) - Number(a.score || 0)).slice(0, limit);
-        } catch (error) {
-          const decisionPromise = decisionService.waitForDecision({ taskId: session.taskId, workflow: session.workflow, stage, error, signal: session.signal });
-          session.pendingDecision = decisionPromise;
-          let action;
           try {
-            action = await decisionPromise;
-          } finally {
-            if (session.pendingDecision === decisionPromise) session.pendingDecision = null;
-          }
-          if (action === 'disable-and-continue') {
-            session.remoteDisabledForRun = true;
-            return [];
+            const compatibilityError = getScopeCompatibilityError();
+            if (compatibilityError) throw compatibilityError;
+            const found = await remoteKnowledgeService.search({ query, scopes: session.remoteScopes, matchCount: limit, signal: session.signal });
+            const unique = new Map();
+            for (const item of (Array.isArray(found) ? found : [])) {
+              const key = remoteKey(item);
+              const current = unique.get(key);
+              if (!current || Number(item.score || 0) > Number(current.score || 0)) unique.set(key, item);
+            }
+            return [...unique.values()].sort((a, b) => Number(b.score || 0) - Number(a.score || 0)).slice(0, limit);
+          } catch (error) {
+            joinDecisionWait();
+            const decisionPromise = decisionService.waitForDecision({ taskId: session.taskId, workflow: session.workflow, stage, error, signal: session.signal });
+            session.pendingDecision = decisionPromise;
+            let action;
+            try {
+              action = await decisionPromise;
+            } finally {
+              if (session.pendingDecision === decisionPromise) session.pendingDecision = null;
+            }
+            if (action === 'disable-and-continue') {
+              session.remoteDisabledForRun = true;
+              return [];
+            }
           }
         }
+        return [];
+      } finally {
+        if (joinedDecisionWait) taskControl?.endRemoteKnowledgeDecisionWait?.();
       }
-      return [];
     };
 
     session.disableRemote = () => { session.remoteDisabledForRun = true; };

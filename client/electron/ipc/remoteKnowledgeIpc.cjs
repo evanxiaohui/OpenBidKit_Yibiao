@@ -1,5 +1,6 @@
 function registerRemoteKnowledgeIpc({ ipcMain, remoteKnowledgeService, remoteKnowledgeDecisionService }) {
   ipcMain.handle('remote-knowledge:test-connection', (_event, config) => remoteKnowledgeService.testConnection(config));
+  ipcMain.handle('remote-knowledge:get-endpoint-fingerprint', () => remoteKnowledgeService.getEndpointFingerprint());
   ipcMain.handle('remote-knowledge:list-knowledge-bases', () => remoteKnowledgeService.listKnowledgeBases());
   ipcMain.handle('remote-knowledge:list-documents', (_event, input) => remoteKnowledgeService.listDocuments(input));
   if (!remoteKnowledgeDecisionService) return;

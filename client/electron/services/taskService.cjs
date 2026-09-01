@@ -321,7 +321,7 @@ function cloneRemoteScopes(scopes) {
   }));
 }
 
-function createTaskService({ aiService, agentService, autoConfirmationService, technicalPlanStore, rejectionCheckStore, duplicateCheckStore, feasibilityReportStore, knowledgeBaseService, knowledgeReferenceService, remoteKnowledgeDecisionService, duplicateCheckService, openXmlHelperService }) {
+function createTaskService({ aiService, agentService, autoConfirmationService, technicalPlanStore, rejectionCheckStore, duplicateCheckStore, feasibilityReportStore, knowledgeBaseService, knowledgeReferenceService, remoteKnowledgeDecisionService, duplicateCheckService, openXmlHelperService, taskRunners = {} }) {
   const subscribers = new Set();
   const callbackSubscribers = new Set();
   const activeTasks = new Map();
@@ -722,12 +722,23 @@ function createTaskService({ aiService, agentService, autoConfirmationService, t
       signal: abortController.signal,
       knowledgeSession: null,
       remoteKnowledgeDecision: null,
+      remoteKnowledgeDecisionWaiters: 0,
       pauseRequested: false,
       outlineSelectionWaiter: null,
       outlineSelectionResult: null,
       outlineSelectionAutoConfirmationId: null,
       isPauseRequested() {
         return this.pauseRequested;
+      },
+      beginRemoteKnowledgeDecisionWait() {
+        this.remoteKnowledgeDecisionWaiters += 1;
+      },
+      endRemoteKnowledgeDecisionWait() {
+        this.remoteKnowledgeDecisionWaiters = Math.max(0, this.remoteKnowledgeDecisionWaiters - 1);
+        if (this.remoteKnowledgeDecisionWaiters || !this.remoteKnowledgeDecision) return;
+        this.remoteKnowledgeDecision = null;
+        const activeTask = activeTasks.get(type);
+        if (activeTask) emit(activeTask, getSnapshotForTask(activeTask));
       },
       requestPause() {
         this.pauseRequested = true;
@@ -898,16 +909,6 @@ function createTaskService({ aiService, agentService, autoConfirmationService, t
         taskControl,
       });
       taskControl.knowledgeSession = session;
-      if (session?.searchRemote) {
-        const originalSearchRemote = session.searchRemote.bind(session);
-        session.searchRemote = async (...args) => {
-          try {
-            return await originalSearchRemote(...args);
-          } finally {
-            taskControl.remoteKnowledgeDecision = null;
-          }
-        };
-      }
     }
     const initialState = startOptions.skipInitialStateUpdate
       ? previousState
@@ -1465,7 +1466,7 @@ function createTaskService({ aiService, agentService, autoConfirmationService, t
           ? 'response-file'
           : 'aligned';
       const taskPayload = { ...payload, outline_mode: outlineMode };
-      return startManagedTask('outline-generation', taskPayload, runOutlineGenerationTaskV2, {
+      return startManagedTask('outline-generation', taskPayload, taskRunners.outlineGeneration || runOutlineGenerationTaskV2, {
         outlineMode,
         outlineExpansionMode: payload?.outline_expansion_mode === 'original-only' ? 'original-only' : 'ai-complement',
         outlineWordControlOptions: payload?.word_control_options,
