@@ -210,9 +210,9 @@ function extractFactTerms(value) {
   for (const match of text.matchAll(/[\u4e00-\u9fff]{2,}|[a-z0-9][a-z0-9_-]{2,}/g)) {
     const term = match[0];
     terms.add(term);
-    if (/^[\u4e00-\u9fff]+$/.test(term)) {
-      for (let index = 0; index < term.length - 1; index += 1) {
-        terms.add(term.slice(index, index + 2));
+    if (/^[\u4e00-\u9fff]+$/.test(term) && term.length >= 3) {
+      for (let index = 0; index < term.length - 2; index += 1) {
+        terms.add(term.slice(index, index + 3));
       }
     }
   }

@@ -61,6 +61,18 @@ test('远程事实组必须能由本地材料标题词证明，remote-only 组�
   );
 });
 
+test('通用二字词命中不构成 provenance，本地知识条目标题可作为合法来源', () => {
+  const allowlist = buildGlobalFactGroupAllowlist({
+    tenderFiles: [{ content: '本项目平台建设方案。' }],
+    knowledgeItems: [{ title: '履约团队配置', content: '项目经理和技术负责人配置。' }],
+  });
+  const result = filterRemoteOnlyGlobalFacts({ groups: [
+    { id: 'local-knowledge', title: '履约团队配置', content: '- 按本地知识条目执行' },
+    { id: 'remote', title: '平台资质要求', content: '- 远程新增要求' },
+  ] }, allowlist, { remoteKnowledge: true });
+  assert.deepEqual(result.groups.map((group) => group.id), ['local-knowledge']);
+});
+
 test('真实全局事实任务传递 stage、query、budget，并在远程 zero-hit 时保留本地材料', async () => {
   const searches = [];
   const runs = [];
