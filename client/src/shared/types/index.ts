@@ -58,6 +58,7 @@ export type {
   ModelInfoCacheEntry,
   ModelInfoResult,
   ModelListResult,
+  RemoteKnowledgeConnectionConfig,
   TextModelConfig,
   TextModelProvider,
   TextModelProfiles,

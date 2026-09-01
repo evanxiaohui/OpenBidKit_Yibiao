@@ -2,6 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { getConfigFilePath } = require('../utils/paths.cjs');
 const { createAnalyticsClientId } = require('../utils/machineIdentity.cjs');
+const { loadBundledRemoteKnowledgeDefault, normalizeRemoteKnowledgeConfig } = require('./remoteKnowledgeConfig.cjs');
 
 const textModelProviders = ['jinlong', 'volcengine', 'deepseek', 'agnes', 'custom'];
 const imageModelProviders = ['jinlong', 'volcengine', 'google-ai-studio', 'bailian-token-plan', 'agnes', 'custom', 'comfyui'];
@@ -260,6 +261,7 @@ const defaultExportFormat = {
 };
 
 const defaultConfig = {
+  remote_knowledge: loadBundledRemoteKnowledgeDefault(),
   text_model_provider: 'jinlong',
   text_model_profiles: defaultTextModelProfiles,
   api_key: '',
@@ -740,6 +742,7 @@ function normalizeConfig(config) {
     request_mode: activeTextProfile.request_mode,
     image_model: activeImageProfile,
     image_model_profiles: imageModelProfiles,
+    remote_knowledge: normalizeRemoteKnowledgeConfig(source.remote_knowledge, defaultConfig.remote_knowledge),
     components: normalizeComponentsConfig(source.components),
     update_channel: normalizeUpdateChannel(source.update_channel),
     gpu_hardware_acceleration_enabled: gpuHardwareAccelerationEnabled,
@@ -795,6 +798,10 @@ function createConfigStore(app) {
       return configFile;
     },
 
+    getRemoteKnowledgeDefault() {
+      return normalizeRemoteKnowledgeConfig(loadBundledRemoteKnowledgeDefault());
+    },
+
     load() {
       if (!fs.existsSync(configFile)) {
         const config = withAnalyticsIdentity(normalizeConfig());
@@ -831,6 +838,10 @@ function createConfigStore(app) {
           image_model_profiles: {
             ...currentConfig.image_model_profiles,
             ...(config && config.image_model_profiles ? config.image_model_profiles : {}),
+          },
+          remote_knowledge: {
+            ...currentConfig.remote_knowledge,
+            ...(config && config.remote_knowledge ? config.remote_knowledge : {}),
           },
           agent_mode_scenarios: {
             ...currentConfig.agent_mode_scenarios,

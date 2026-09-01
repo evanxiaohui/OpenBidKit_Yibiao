@@ -22,6 +22,11 @@ export interface AiConfig extends TextModelConfig {
   text_model_profiles: TextModelProfiles;
 }
 
+export interface RemoteKnowledgeConnectionConfig {
+  base_url: string;
+  api_key: string;
+}
+
 export interface ConfigSaveResult {
   success: boolean;
   message: string;
@@ -82,6 +87,7 @@ export interface AgentModeScenariosConfig {
 }
 
 export interface ClientConfig extends AiConfig {
+  remote_knowledge: RemoteKnowledgeConnectionConfig;
   image_model: ImageModelConfig;
   image_model_profiles: ImageModelProfiles;
   components: ComponentsConfig;

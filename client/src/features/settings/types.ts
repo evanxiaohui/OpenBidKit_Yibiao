@@ -1,4 +1,4 @@
-import type { AgentModeScenariosConfig, ComponentsConfig, ImageModelConfig, ImageModelProfiles, TextModelConfig, TextModelProfiles, TextModelProvider, UpdateChannel } from '../../shared/types';
+import type { AgentModeScenariosConfig, ComponentsConfig, ImageModelConfig, ImageModelProfiles, RemoteKnowledgeConnectionConfig, TextModelConfig, TextModelProfiles, TextModelProvider, UpdateChannel } from '../../shared/types';
 
 export interface SettingsPageState {
   textModel: Omit<TextModelConfig, 'context_length_limit' | 'concurrency_limit'> & {
@@ -11,6 +11,7 @@ export interface SettingsPageState {
     concurrency_limit: number | '';
   };
   imageModelProfiles: ImageModelProfiles;
+  remoteKnowledge: RemoteKnowledgeConnectionConfig;
   components: Omit<ComponentsConfig, 'mermaid_concurrency_limit' | 'html_concurrency_limit'> & {
     mermaid_concurrency_limit: number | '';
     html_concurrency_limit: number | '';

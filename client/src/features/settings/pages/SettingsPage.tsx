@@ -609,6 +609,10 @@ const initialState: SettingsPageState = {
     ...imageProviderDefaults.jinlong,
   },
   imageModelProfiles: createDefaultImageModelProfiles(),
+  remoteKnowledge: {
+    base_url: 'http://192.168.231.16:8080/api/v1',
+    api_key: '',
+  },
   components: {
     file_parser: {
       provider: 'local',
@@ -719,6 +723,7 @@ function SettingsPage({ onDeveloperModeChange }: SettingsPageProps) {
         textModelProfiles,
         imageModel: activeImageProfile,
         imageModelProfiles,
+        remoteKnowledge: config.remote_knowledge,
         components: normalizeComponentsState(config.components),
         agentModeScenarios: normalizeAgentModeScenarios(config.agent_mode_scenarios),
         general: {
@@ -774,6 +779,7 @@ function SettingsPage({ onDeveloperModeChange }: SettingsPageProps) {
       request_mode: activeTextProfile.request_mode,
       image_model: activeImageProfile,
       image_model_profiles: imageModelProfiles,
+      remote_knowledge: state.remoteKnowledge,
       components: componentsFromState(state.components),
       agent_mode_scenarios: options.includeAgentSettings ? state.agentModeScenarios : persistedAgentModeScenarios,
       ...(options.includeAgentSettings

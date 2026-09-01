@@ -9,9 +9,9 @@
   "scripts": {
     "dev": "concurrently -k -n vite,electron -c blue,magenta \"vite --host 127.0.0.1 --port 5173 --strictPort\" \"wait-on http://127.0.0.1:5173 && cross-env ELECTRON_RENDERER_URL=http://127.0.0.1:5173 electron .\"",
     "build": "tsc --noEmit && vite build",
-    "dist": "npm run build && node scripts/prepare-openxml-helper.cjs && electron-builder",
-    "dist:win": "npm run build && node scripts/prepare-openxml-helper.cjs --platform win32 --arch x64 && electron-builder --win",
-    "dist:mac": "npm run build && node scripts/prepare-openxml-helper.cjs --platform darwin --arch all && electron-builder --mac",
+    "dist": "npm run build && node scripts/prepare-remote-knowledge-default.cjs && node scripts/prepare-openxml-helper.cjs && electron-builder",
+    "dist:win": "npm run build && node scripts/prepare-remote-knowledge-default.cjs && node scripts/prepare-openxml-helper.cjs --platform win32 --arch x64 && electron-builder --win",
+    "dist:mac": "npm run build && node scripts/prepare-remote-knowledge-default.cjs && node scripts/prepare-openxml-helper.cjs --platform darwin --arch all && electron-builder --mac",
     "postinstall": "electron-builder install-app-deps",
     "preview": "vite preview --host 127.0.0.1 --port 4173",
     "generate-build-attestation": "node scripts/generate-build-attestation.cjs",
@@ -59,6 +59,10 @@
           "filter": [
             "**/*"
           ]
+        },
+        {
+          "from": "build/generated/default-remote-knowledge.json",
+          "to": "default-remote-knowledge.json"
         }
       ],
       "target": [
@@ -105,6 +109,10 @@
           "filter": [
             "**/*"
           ]
+        },
+        {
+          "from": "build/generated/default-remote-knowledge.json",
+          "to": "default-remote-knowledge.json"
         }
       ],
       "target": [

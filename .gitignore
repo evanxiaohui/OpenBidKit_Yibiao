@@ -21,6 +21,8 @@ requirements_build.txt
 frontend/build/
 backend/static/
 client/release/
+client/build-secrets/default-remote-knowledge.json
+client/build/generated/default-remote-knowledge.json
 
 # 智能体命令工具下载临时目录
 client/.tmp-agent-tools-download/
