@@ -149,7 +149,6 @@ function createRemoteKnowledgeClient({ config, fetchImpl = fetch, timeoutMs = DE
 
   async function hybridSearch({ query, knowledgeBaseIds, knowledgeIds, signal } = {}) {
     const ids = Array.isArray(knowledgeBaseIds) ? knowledgeBaseIds.map(String).filter(Boolean) : [];
-    if (!ids.length) throw new Error('远程知识检索范围不能为空');
     const body = {
       query: String(query || ''),
       knowledge_base_ids: ids,

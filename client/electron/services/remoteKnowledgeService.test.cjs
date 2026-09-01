@@ -212,6 +212,31 @@ test('testConnection reports a valid v0.7.2 knowledge-base list', async () => {
   ]);
 });
 
+test('testConnection validates the search contract when no knowledge bases are available', async () => {
+  const calls = [];
+  const service = createServiceWithFetch(async (url, init) => {
+    calls.push({ url, body: init.body ? JSON.parse(init.body) : undefined });
+    if (url.endsWith('/knowledge-bases')) {
+      return jsonResponse({ success: true, data: [] });
+    }
+    return jsonResponse({ success: true, data: { results: [] } });
+  });
+
+  assert.deepEqual(await service.testConnection(), {
+    knowledgeBaseCount: 0,
+  });
+  assert.deepEqual(calls, [
+    { url: 'http://remote.example/api/v1/knowledge-bases', body: undefined },
+    {
+      url: 'http://remote.example/api/v1/knowledge-search',
+      body: {
+        query: '远程知识连接测试',
+        knowledge_base_ids: [],
+      },
+    },
+  ]);
+});
+
 test('testConnection rejects search responses missing required v0.7.2 fields', async () => {
   const service = createServiceWithFetch(async (url) => {
     if (url.endsWith('/knowledge-bases')) {

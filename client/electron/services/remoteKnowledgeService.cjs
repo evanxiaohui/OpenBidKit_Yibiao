@@ -165,14 +165,12 @@ function createRemoteKnowledgeService({ config, fetchImpl, timeoutMs, retryDelay
     const client = getClient(hasConfigOverride ? input : undefined);
     try {
       const knowledgeBases = (await client.listKnowledgeBases({ signal })).map(mapKnowledgeBase);
-      if (knowledgeBases.length) {
-        const results = await client.hybridSearch({
-          query: '远程知识连接测试',
-          knowledgeBaseIds: [knowledgeBases[0].id],
-          signal,
-        });
-        results.map(mapSearchResult);
-      }
+      const results = await client.hybridSearch({
+        query: '远程知识连接测试',
+        knowledgeBaseIds: knowledgeBases.length ? [knowledgeBases[0].id] : [],
+        signal,
+      });
+      results.map(mapSearchResult);
       return { knowledgeBaseCount: knowledgeBases.length };
     } catch (error) {
       if (error?.category === 'incompatible') throw incompatibleError();
