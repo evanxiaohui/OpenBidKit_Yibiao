@@ -159,7 +159,7 @@ function createRemoteKnowledgeClient({ config, fetchImpl = fetch, timeoutMs = DE
     if (documentIds.length) body.knowledge_ids = documentIds;
     return extractSearchResponse(await request({
       method: 'POST',
-      requestPath: `/knowledge-bases/${encodeURIComponent(ids[0])}/hybrid-search`,
+      requestPath: '/knowledge-search',
       body,
       signal,
     }));

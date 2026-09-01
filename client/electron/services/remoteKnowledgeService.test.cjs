@@ -53,8 +53,8 @@ test('maps remote knowledge bases and documents to generic remote knowledge mode
 
 test('splits whole-library and document-limited scopes to preserve mixed semantics', async () => {
   const calls = [];
-  const service = createServiceWithFetch(async (_url, init) => {
-    calls.push(JSON.parse(init.body));
+  const service = createServiceWithFetch(async (url, init) => {
+    calls.push({ url, body: JSON.parse(init.body) });
     return jsonResponse({ data: { results: [] } });
   });
   await service.search({
@@ -65,12 +65,14 @@ test('splits whole-library and document-limited scopes to preserve mixed semanti
     ],
     matchCount: 8,
   });
-  assert.deepEqual(calls[0].knowledge_base_ids, ['kb-a']);
-  assert.equal(Object.hasOwn(calls[0], 'knowledge_ids'), false);
-  assert.deepEqual(calls[1].knowledge_base_ids, ['kb-b']);
-  assert.deepEqual(calls[1].knowledge_ids, ['doc-1']);
-  assert.equal(calls[0].match_count, 8);
-  assert.equal(calls[1].match_count, 8);
+  assert.equal(calls[0].url, 'http://remote.example/api/v1/knowledge-search');
+  assert.equal(calls[1].url, 'http://remote.example/api/v1/knowledge-search');
+  assert.deepEqual(calls[0].body.knowledge_base_ids, ['kb-a']);
+  assert.equal(Object.hasOwn(calls[0].body, 'knowledge_ids'), false);
+  assert.deepEqual(calls[1].body.knowledge_base_ids, ['kb-b']);
+  assert.deepEqual(calls[1].body.knowledge_ids, ['doc-1']);
+  assert.equal(calls[0].body.match_count, 8);
+  assert.equal(calls[1].body.match_count, 8);
 });
 
 test('maps returned chunks to generic remote knowledge search results', async () => {

@@ -58,9 +58,9 @@ test('reads a document page with server pagination metadata', async () => {
   });
 });
 
-test('posts a whole-library hybrid search without document IDs', async () => {
+test('posts a whole-library search to the cross-library endpoint without document IDs', async () => {
   const client = createClient(async (url, init) => {
-    assert.equal(url, 'http://remote.example/api/v1/knowledge-bases/kb-a/hybrid-search');
+    assert.equal(url, 'http://remote.example/api/v1/knowledge-search');
     assert.deepEqual(JSON.parse(init.body), {
       query_text: '施工组织设计',
       match_count: 8,
@@ -78,8 +78,9 @@ test('posts a whole-library hybrid search without document IDs', async () => {
   assert.deepEqual(results, []);
 });
 
-test('posts a document-limited hybrid search with only the selected document IDs', async () => {
-  const client = createClient(async (_url, init) => {
+test('posts a document-limited search to the cross-library endpoint with only the selected document IDs', async () => {
+  const client = createClient(async (url, init) => {
+    assert.equal(url, 'http://remote.example/api/v1/knowledge-search');
     assert.deepEqual(JSON.parse(init.body), {
       query_text: '施工组织设计',
       match_count: 8,
