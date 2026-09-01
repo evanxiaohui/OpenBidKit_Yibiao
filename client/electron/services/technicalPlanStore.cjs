@@ -61,6 +61,7 @@ const initialState = {
   outlineWordControlOptions: { ...defaultOutlineWordControlOptions },
   outlineWordControlSnapshot: undefined,
   referenceKnowledgeDocumentIds: [],
+  remoteKnowledgeScopes: [],
   bidSectionExtractionTask: undefined,
   bidAnalysisTask: undefined,
   outlineGenerationTask: undefined,
@@ -994,6 +995,96 @@ function createTechnicalPlanStore({ app, db, fileService, agentService, taskLogS
       .forEach((documentId, index) => insert.run({ document_id: documentId, sort_order: index }));
   }
 
+  function normalizeRemoteKnowledgeDocuments(documents) {
+    const seen = new Set();
+    return (Array.isArray(documents) ? documents : []).reduce((result, document) => {
+      const knowledgeId = String(document?.knowledgeId || '').trim();
+      if (!knowledgeId || seen.has(knowledgeId)) return result;
+      seen.add(knowledgeId);
+      result.push({
+        knowledgeId,
+        title: String(document?.title || '').trim(),
+      });
+      return result;
+    }, []);
+  }
+
+  function normalizeRemoteKnowledgeScopes(scopes) {
+    const seen = new Set();
+    return (Array.isArray(scopes) ? scopes : []).reduce((result, scope) => {
+      const knowledgeBaseId = String(scope?.knowledgeBaseId || '').trim();
+      if (!knowledgeBaseId || seen.has(knowledgeBaseId)) return result;
+      seen.add(knowledgeBaseId);
+      const mode = scope?.mode === 'all' ? 'all' : 'documents';
+      result.push({
+        knowledgeBaseId,
+        knowledgeBaseName: String(scope?.knowledgeBaseName || '').trim(),
+        mode,
+        endpointFingerprint: String(scope?.endpointFingerprint || '').trim(),
+        documents: mode === 'documents' ? normalizeRemoteKnowledgeDocuments(scope?.documents) : [],
+      });
+      return result;
+    }, []);
+  }
+
+  function loadRemoteKnowledgeScopes() {
+    const documentsByKnowledgeBaseId = db.prepare(`
+      SELECT knowledge_base_id, knowledge_id, knowledge_title
+      FROM technical_plan_remote_knowledge_documents
+      ORDER BY knowledge_base_id ASC, sort_order ASC
+    `).all().reduce((result, row) => {
+      const documents = result.get(row.knowledge_base_id) || [];
+      documents.push({ knowledgeId: row.knowledge_id, title: row.knowledge_title });
+      result.set(row.knowledge_base_id, documents);
+      return result;
+    }, new Map());
+    return db.prepare(`
+      SELECT knowledge_base_id, knowledge_base_name, scope_mode, endpoint_fingerprint
+      FROM technical_plan_remote_knowledge_scopes
+      ORDER BY sort_order ASC
+    `).all().map((row) => ({
+      knowledgeBaseId: row.knowledge_base_id,
+      knowledgeBaseName: row.knowledge_base_name,
+      mode: row.scope_mode,
+      endpointFingerprint: row.endpoint_fingerprint,
+      documents: row.scope_mode === 'documents' ? (documentsByKnowledgeBaseId.get(row.knowledge_base_id) || []) : [],
+    }));
+  }
+
+  function replaceRemoteKnowledgeScopes(scopes) {
+    const normalizedScopes = normalizeRemoteKnowledgeScopes(scopes);
+    db.prepare('DELETE FROM technical_plan_remote_knowledge_documents').run();
+    db.prepare('DELETE FROM technical_plan_remote_knowledge_scopes').run();
+    const insertScope = db.prepare(`
+      INSERT INTO technical_plan_remote_knowledge_scopes
+      (knowledge_base_id, knowledge_base_name, scope_mode, endpoint_fingerprint, sort_order)
+      VALUES (@knowledge_base_id, @knowledge_base_name, @scope_mode, @endpoint_fingerprint, @sort_order)
+    `);
+    const insertDocument = db.prepare(`
+      INSERT INTO technical_plan_remote_knowledge_documents
+      (knowledge_base_id, knowledge_id, knowledge_title, sort_order)
+      VALUES (@knowledge_base_id, @knowledge_id, @knowledge_title, @sort_order)
+    `);
+    normalizedScopes.forEach((scope, scopeIndex) => {
+      insertScope.run({
+        knowledge_base_id: scope.knowledgeBaseId,
+        knowledge_base_name: scope.knowledgeBaseName,
+        scope_mode: scope.mode,
+        endpoint_fingerprint: scope.endpointFingerprint,
+        sort_order: scopeIndex,
+      });
+      if (scope.mode !== 'documents') return;
+      scope.documents.forEach((document, documentIndex) => {
+        insertDocument.run({
+          knowledge_base_id: scope.knowledgeBaseId,
+          knowledge_id: document.knowledgeId,
+          knowledge_title: document.title,
+          sort_order: documentIndex,
+        });
+      });
+    });
+  }
+
   function taskFromRow(row) {
     if (!row) return undefined;
     return {
@@ -1655,6 +1746,8 @@ function createTechnicalPlanStore({ app, db, fileService, agentService, taskLogS
     db.prepare('DELETE FROM technical_plan_tasks').run();
     db.prepare('DELETE FROM technical_plan_bid_items').run();
     db.prepare('DELETE FROM technical_plan_reference_docs').run();
+    db.prepare('DELETE FROM technical_plan_remote_knowledge_documents').run();
+    db.prepare('DELETE FROM technical_plan_remote_knowledge_scopes').run();
     db.prepare('DELETE FROM technical_plan_outline_nodes').run();
     db.prepare('DELETE FROM technical_plan_global_fact_groups').run();
     clearContentIllustrationPlan();
@@ -1695,6 +1788,8 @@ function createTechnicalPlanStore({ app, db, fileService, agentService, taskLogS
     db.prepare('DELETE FROM technical_plan_tasks').run();
     db.prepare('DELETE FROM technical_plan_bid_items').run();
     db.prepare('DELETE FROM technical_plan_reference_docs').run();
+    db.prepare('DELETE FROM technical_plan_remote_knowledge_documents').run();
+    db.prepare('DELETE FROM technical_plan_remote_knowledge_scopes').run();
     db.prepare('DELETE FROM technical_plan_outline_nodes').run();
     db.prepare('DELETE FROM technical_plan_global_fact_groups').run();
     clearContentIllustrationPlan();
@@ -1963,6 +2058,7 @@ function createTechnicalPlanStore({ app, db, fileService, agentService, taskLogS
 
     const nextBidMode = isValidBidMode(partial.bidAnalysisMode) ? partial.bidAnalysisMode : meta.bid_analysis_mode;
     if (hasOwn(partial, 'referenceKnowledgeDocumentIds')) replaceReferenceDocumentIds(partial.referenceKnowledgeDocumentIds);
+    if (hasOwn(partial, 'remoteKnowledgeScopes')) replaceRemoteKnowledgeScopes(partial.remoteKnowledgeScopes);
     if (!invalidatesContentGeneration && hasOwn(partial, 'contentIllustrationPlan')) replaceContentIllustrationPlan(partial.contentIllustrationPlan);
     if (hasOwn(partial, 'contentIllustrationItem')) saveContentIllustrationItem(partial.contentIllustrationItem);
     if (hasOwn(partial, 'bidAnalysisTasks')) saveBidItems(partial.bidAnalysisTasks, nextBidMode);
@@ -2065,6 +2161,7 @@ function createTechnicalPlanStore({ app, db, fileService, agentService, taskLogS
         ? normalizeOutlineWordControlOptions(safeJsonParse(meta.outline_word_control_snapshot_json, defaultOutlineWordControlOptions))
         : undefined,
       referenceKnowledgeDocumentIds: loadReferenceDocumentIds(),
+      remoteKnowledgeScopes: loadRemoteKnowledgeScopes(),
       ...tasks,
       globalFacts: loadGlobalFacts(),
       contentGenerationOptions: safeJsonParse(meta.content_generation_options_json, undefined),
@@ -2130,13 +2227,17 @@ function createTechnicalPlanStore({ app, db, fileService, agentService, taskLogS
     }
   }
 
-  function saveOutlineConfig({ referenceKnowledgeDocumentIds, outlineMode, outlineExpansionMode, wordControlOptions } = {}) {
-    updateTechnicalPlan({
-      outlineMode: isValidOutlineMode(outlineMode) ? outlineMode : 'aligned',
-      outlineExpansionMode: isValidOutlineExpansionMode(outlineExpansionMode) ? outlineExpansionMode : 'ai-complement',
-      outlineWordControlOptions: normalizeOutlineWordControlOptions(wordControlOptions),
-      referenceKnowledgeDocumentIds,
+  function saveOutlineConfig({ referenceKnowledgeDocumentIds, remoteKnowledgeScopes, outlineMode, outlineExpansionMode, wordControlOptions } = {}) {
+    const transaction = db.transaction(() => {
+      replaceReferenceDocumentIds(referenceKnowledgeDocumentIds);
+      replaceRemoteKnowledgeScopes(remoteKnowledgeScopes);
+      updateTechnicalPlan({
+        outlineMode: isValidOutlineMode(outlineMode) ? outlineMode : 'aligned',
+        outlineExpansionMode: isValidOutlineExpansionMode(outlineExpansionMode) ? outlineExpansionMode : 'ai-complement',
+        outlineWordControlOptions: normalizeOutlineWordControlOptions(wordControlOptions),
+      });
     });
+    transaction();
   }
 
   // 保存用户确认后的一级目录待扩展选择，不写入正式目录树。
@@ -2672,6 +2773,8 @@ function createTechnicalPlanStore({ app, db, fileService, agentService, taskLogS
       db.prepare('DELETE FROM technical_plan_tasks').run();
       db.prepare('DELETE FROM technical_plan_bid_items').run();
       db.prepare('DELETE FROM technical_plan_reference_docs').run();
+      db.prepare('DELETE FROM technical_plan_remote_knowledge_documents').run();
+      db.prepare('DELETE FROM technical_plan_remote_knowledge_scopes').run();
       db.prepare('DELETE FROM technical_plan_outline_nodes').run();
       db.prepare('DELETE FROM technical_plan_global_fact_groups').run();
       clearContentIllustrationPlan();

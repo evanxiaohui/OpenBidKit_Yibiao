@@ -3,7 +3,7 @@ const path = require('node:path');
 const Database = require('better-sqlite3');
 const { getWorkspaceDatabasePath } = require('../utils/paths.cjs');
 
-const schemaVersion = 23;
+const schemaVersion = 24;
 
 function createInitialSchema(db) {
   db.exec(`
@@ -88,6 +88,25 @@ function createInitialSchema(db) {
     CREATE INDEX IF NOT EXISTS idx_technical_plan_reference_docs_order
     ON technical_plan_reference_docs(sort_order);
 
+    CREATE TABLE IF NOT EXISTS technical_plan_remote_knowledge_scopes (
+      knowledge_base_id TEXT PRIMARY KEY,
+      knowledge_base_name TEXT NOT NULL,
+      scope_mode TEXT NOT NULL CHECK (scope_mode IN ('all', 'documents')),
+      endpoint_fingerprint TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS technical_plan_remote_knowledge_documents (
+      knowledge_base_id TEXT NOT NULL,
+      knowledge_id TEXT NOT NULL,
+      knowledge_title TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (knowledge_base_id, knowledge_id),
+      FOREIGN KEY (knowledge_base_id)
+        REFERENCES technical_plan_remote_knowledge_scopes(knowledge_base_id)
+        ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS technical_plan_outline_nodes (
       node_id TEXT PRIMARY KEY,
       parent_node_id TEXT,
@@ -157,6 +176,29 @@ function createTechnicalPlanGlobalFactsSchema(db) {
 
     CREATE INDEX IF NOT EXISTS idx_technical_plan_global_fact_groups_order
     ON technical_plan_global_fact_groups(sort_order);
+  `);
+}
+
+function createTechnicalPlanRemoteKnowledgeSchema(db) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS technical_plan_remote_knowledge_scopes (
+      knowledge_base_id TEXT PRIMARY KEY,
+      knowledge_base_name TEXT NOT NULL,
+      scope_mode TEXT NOT NULL CHECK (scope_mode IN ('all', 'documents')),
+      endpoint_fingerprint TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS technical_plan_remote_knowledge_documents (
+      knowledge_base_id TEXT NOT NULL,
+      knowledge_id TEXT NOT NULL,
+      knowledge_title TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (knowledge_base_id, knowledge_id),
+      FOREIGN KEY (knowledge_base_id)
+        REFERENCES technical_plan_remote_knowledge_scopes(knowledge_base_id)
+        ON DELETE CASCADE
+    );
   `);
 }
 
@@ -1119,6 +1161,11 @@ const schemaHealthTableGroups = [
     tables: ['feasibility_report_meta', 'feasibility_report_tasks', 'feasibility_report_outline_nodes'],
     repair: createFeasibilityReportSchema,
   },
+  {
+    version: 24,
+    tables: ['technical_plan_remote_knowledge_scopes', 'technical_plan_remote_knowledge_documents'],
+    repair: createTechnicalPlanRemoteKnowledgeSchema,
+  },
 ];
 
 function removeKnowledgeMigrationMeta(db) {
@@ -1459,6 +1506,11 @@ const migrations = [
     version: 23,
     description: '新增可行性研究报告工作区表结构',
     up: createFeasibilityReportSchema,
+  },
+  {
+    version: 24,
+    description: '技术方案新增远程知识库范围',
+    up: createTechnicalPlanRemoteKnowledgeSchema,
   },
 ];
 

@@ -98,6 +98,7 @@ const resetState = {
   outlineWordControlOptions: { ...DEFAULT_OUTLINE_WORD_CONTROL_OPTIONS },
   outlineWordControlSnapshot: undefined,
   referenceKnowledgeDocumentIds: [] as string[],
+  remoteKnowledgeScopes: [],
   bidSectionExtractionTask: undefined,
   bidAnalysisTask: undefined,
   outlineGenerationTask: undefined,

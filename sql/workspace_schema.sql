@@ -167,6 +167,26 @@ CREATE TABLE IF NOT EXISTS technical_plan_reference_docs (
 CREATE INDEX IF NOT EXISTS idx_technical_plan_reference_docs_order
 ON technical_plan_reference_docs(sort_order);
 
+-- 技术方案选中的远程知识库范围，仅保存服务端点指纹，不保存密钥。
+CREATE TABLE IF NOT EXISTS technical_plan_remote_knowledge_scopes (
+  knowledge_base_id TEXT PRIMARY KEY,
+  knowledge_base_name TEXT NOT NULL,
+  scope_mode TEXT NOT NULL CHECK (scope_mode IN ('all', 'documents')),
+  endpoint_fingerprint TEXT NOT NULL,
+  sort_order INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS technical_plan_remote_knowledge_documents (
+  knowledge_base_id TEXT NOT NULL,
+  knowledge_id TEXT NOT NULL,
+  knowledge_title TEXT NOT NULL,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (knowledge_base_id, knowledge_id),
+  FOREIGN KEY (knowledge_base_id)
+    REFERENCES technical_plan_remote_knowledge_scopes(knowledge_base_id)
+    ON DELETE CASCADE
+);
+
 -- 技术方案目录树节点。
 -- 目录结构和正文内容的权威来源。
 CREATE TABLE IF NOT EXISTS technical_plan_outline_nodes (

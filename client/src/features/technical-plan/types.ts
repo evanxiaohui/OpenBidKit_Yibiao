@@ -342,6 +342,21 @@ export interface DetectedBidSection {
   evidence?: string[];
 }
 
+export type RemoteKnowledgeScopeMode = 'all' | 'documents';
+
+export interface RemoteKnowledgeDocumentScope {
+  knowledgeId: string;
+  title: string;
+}
+
+export interface RemoteKnowledgeScope {
+  knowledgeBaseId: string;
+  knowledgeBaseName: string;
+  mode: RemoteKnowledgeScopeMode;
+  endpointFingerprint: string;
+  documents: RemoteKnowledgeDocumentScope[];
+}
+
 export interface TechnicalPlanState {
   workflowKind: TechnicalPlanWorkflowKind;
   step: TechnicalPlanStep;
@@ -363,6 +378,7 @@ export interface TechnicalPlanState {
   outlineWordControlOptions: OutlineWordControlOptions;
   outlineWordControlSnapshot?: OutlineWordControlOptions;
   referenceKnowledgeDocumentIds: string[];
+  remoteKnowledgeScopes: RemoteKnowledgeScope[];
   bidSectionExtractionTask?: BackgroundTaskState;
   bidAnalysisTask?: BackgroundTaskState;
   outlineGenerationTask?: BackgroundTaskState;
