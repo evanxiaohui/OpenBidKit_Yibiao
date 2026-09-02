@@ -2,6 +2,7 @@ const {
   OUTLINE_AGENT_TASK_KEY,
   TEMPLATE_EXTRACTION_AGENT_TASK_KEY,
 } = require('./outlineGenerationAgentV2Config.cjs');
+const { planRemoteKnowledgeQueries } = require('./remoteKnowledgeQueryPlanner.cjs');
 const { runTemplateExtractionTask } = require('./templateExtractionTask.cjs');
 
 const DEFAULT_ESTIMATED_SECTION_WORDS = 3000;
@@ -524,13 +525,6 @@ function buildRemoteKnowledgeFile(items = []) {
   };
 }
 
-function buildOutlineRetrievalQuery({ projectOverview = '', responseRequirements = '', technicalRequirements = '', outlineTarget = '' } = {}) {
-  return [projectOverview, responseRequirements, technicalRequirements, outlineTarget]
-    .map((value) => String(value || '').replace(/\s+/g, ' ').trim())
-    .filter(Boolean)
-    .join('；');
-}
-
 function createInitialPrompt(taskInstruction, { standaloneTechnical = false, hasRemoteKnowledge = false } = {}) {
   const goal = standaloneTechnical
     ? '我们的目标是为单独装订的技术文件准备一级目录。一级目录必须直接对应技术评分大项。'
@@ -734,14 +728,20 @@ async function runOutlineGenerationTaskV2({ aiService, agentService, ordinaryAge
   }
   let remoteKnowledgeFile = null;
   if (!originalOnly && knowledgeSession?.searchRemote) {
+    const queryPlan = await planRemoteKnowledgeQueries({
+      aiService,
+      stage: 'outline',
+      context: {
+        projectOverview: storedPlan.projectOverview || '',
+        responseRequirements: responseFileRequirements,
+        technicalRequirements: storedPlan.techRequirements || '',
+        outlineTarget: taskInstruction,
+      },
+      signal: taskControl?.signal,
+    });
     const remoteItems = await knowledgeSession.searchRemote({
       stage: 'outline',
-      query: buildOutlineRetrievalQuery({
-        projectOverview: storedPlan.projectOverview,
-        responseRequirements: responseFileRequirements,
-        technicalRequirements: storedPlan.techRequirements,
-        outlineTarget: taskInstruction,
-      }),
+      queries: queryPlan.queries,
       matchCount: 8,
     });
     remoteKnowledgeFile = buildRemoteKnowledgeFile(remoteItems);
@@ -1319,5 +1319,4 @@ module.exports = {
   createChildrenPrompt,
   enforceMinimumLeafTarget,
   buildRemoteKnowledgeFile,
-  buildOutlineRetrievalQuery,
 };

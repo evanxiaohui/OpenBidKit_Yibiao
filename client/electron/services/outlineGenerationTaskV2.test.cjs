@@ -7,7 +7,6 @@ const {
   createChildrenPrompt,
   enforceMinimumLeafTarget,
   buildRemoteKnowledgeFile,
-  buildOutlineRetrievalQuery,
   runOutlineGenerationTaskV2,
 } = require('./outlineGenerationTaskV2.cjs');
 
@@ -73,25 +72,6 @@ test('远程目录参考文件明确标记为不可信材料且不泄露内部�
   assert.doesNotMatch(file.content, /kb-secret|doc-secret|chunk-secret/);
 });
 
-test('目录远程检索查询保留完整项目概述、响应要求和评分信息', () => {
-  const projectOverview = `项目概述开头${'项目概述正文'.repeat(220)}项目概述末尾`;
-  const responseRequirements = `响应要求开头${'响应要求正文'.repeat(720)}响应要求末尾`;
-  const technicalRequirements = `评分信息开头${'评分信息正文'.repeat(260)}评分信息末尾`;
-
-  const query = buildOutlineRetrievalQuery({
-    projectOverview,
-    responseRequirements,
-    technicalRequirements,
-    outlineTarget: '目录目标末尾',
-  });
-
-  assert.ok(query.length > 1800);
-  assert.match(query, /项目概述末尾/);
-  assert.match(query, /响应要求末尾/);
-  assert.match(query, /评分信息末尾/);
-  assert.match(query, /目录目标末尾/);
-});
-
 test('original-only 真实目录任务不调用远程检索，也不注入远程文件', async () => {
   const searches = [];
   const runs = [];
@@ -153,11 +133,12 @@ test('original-only 真实目录任务不调用远程检索，也不注入远程
 test('非 original-only 真实目录任务按 outline 阶段检索并注入远程参考文件', async () => {
   const searches = [];
   const runs = [];
+  const queryPlanningInputs = [];
   const storedPlan = {
     outlineMode: 'standalone-technical',
-    responseFileRequirements: '技术方案目录要求',
-    techRequirements: '平台总体设计评分项',
-    projectOverview: '智慧水务平台建设',
+    techRequirements: '平台总体设计评分项-技术要求末尾',
+    projectOverview: '智慧水务平台建设-项目概述末尾',
+    bidAnalysisTasks: { responseFileRequirements: { content: '技术方案目录要求-响应要求末尾' } },
   };
   const workspaceStore = {
     loadTechnicalPlan: () => storedPlan,
@@ -182,7 +163,17 @@ test('非 original-only 真实目录任务按 outline 阶段检索并注入远�
     ...patch,
   } });
   await runOutlineGenerationTaskV2({
-    aiService: {},
+    aiService: {
+      collectJsonResponse: async (input) => {
+        queryPlanningInputs.push(input);
+        if (input.logTitle === '远程知识查询规划-outline') {
+          return {
+            queries: ['土地延包实施流程有哪些？', '成果汇交如何验收？', '质量和进度如何控制？'],
+          };
+        }
+        throw new Error(`Unexpected AI request: ${input.logTitle}`);
+      },
+    },
     agentService,
     ordinaryAgentService: {},
     workspaceStore,
@@ -203,9 +194,16 @@ test('非 original-only 真实目录任务按 outline 阶段检索并注入远�
     payload: {},
   });
   assert.equal(searches.length, 1);
-  assert.equal(searches[0].stage, 'outline');
-  assert.ok(searches[0].query.length > 0);
-  assert.equal(searches[0].matchCount, 8);
+  assert.deepEqual(searches[0], {
+    stage: 'outline',
+    queries: ['土地延包实施流程有哪些？', '成果汇交如何验收？', '质量和进度如何控制？'],
+    matchCount: 8,
+  });
+  assert.equal(queryPlanningInputs.length, 1);
+  const planningPrompt = queryPlanningInputs[0].messages[1].content;
+  assert.match(planningPrompt, /项目概述末尾/);
+  assert.match(planningPrompt, /响应要求末尾/);
+  assert.match(planningPrompt, /技术要求末尾/);
   assert.equal(runs.length, 2);
   assert.ok(runs[1].files.some((file) => file.path === '远程知识参考.md'));
 });
