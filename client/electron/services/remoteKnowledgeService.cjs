@@ -7,6 +7,8 @@ const {
 const INCOMPATIBLE_MESSAGE = '远程知识服务版本不受支持，请升级到 v0.7.2 或以上';
 const SEARCH_CONCURRENCY = 3;
 const DEFAULT_MATCH_COUNT = 8;
+const QUERY_CANDIDATE_LIMIT = 8;
+const RRF_K = 60;
 
 function incompatibleError() {
   const error = new Error(INCOMPATIBLE_MESSAGE);
@@ -105,6 +107,76 @@ function resolveMatchCount(value) {
   return Number.isFinite(count) && count > 0 ? Math.floor(count) : DEFAULT_MATCH_COUNT;
 }
 
+function normalizeSearchQueries(queries) {
+  return (Array.isArray(queries) ? queries : [])
+    .map((query) => String(query || '').trim())
+    .filter(Boolean);
+}
+
+function getResultKey(item) {
+  return `${item.knowledgeBaseId}:${item.knowledgeId}:${item.chunkId}`;
+}
+
+function rankQueryCandidates(items) {
+  const unique = new Map();
+  for (const candidate of items.slice().sort((left, right) => (
+    right.item.score - left.item.score || left.encounterIndex - right.encounterIndex
+  ))) {
+    const key = getResultKey(candidate.item);
+    if (!unique.has(key)) unique.set(key, candidate);
+  }
+  return [...unique.values()].slice(0, QUERY_CANDIDATE_LIMIT);
+}
+
+function fuseSearchResults(queryCandidates, resultLimit) {
+  const unique = new Map();
+  for (const [queryIndex, candidates] of queryCandidates.entries()) {
+    for (const [index, candidate] of candidates.entries()) {
+      const { item, encounterIndex } = candidate;
+      const key = getResultKey(item);
+      const entry = unique.get(key) || {
+        item,
+        rrfScore: 0,
+        queryIndexes: new Set(),
+        bestScore: item.score,
+        firstSeen: encounterIndex,
+      };
+      entry.rrfScore += 1 / (RRF_K + index + 1);
+      entry.queryIndexes.add(queryIndex);
+      entry.bestScore = Math.max(entry.bestScore, item.score);
+      entry.firstSeen = Math.min(entry.firstSeen, encounterIndex);
+      if (item.score > entry.item.score) entry.item = item;
+      unique.set(key, entry);
+    }
+  }
+
+  const selected = [];
+  const selectedKeys = new Set();
+  for (const candidates of queryCandidates) {
+    const candidate = candidates.find(({ item }) => !selectedKeys.has(getResultKey(item)));
+    if (!candidate) continue;
+    const key = getResultKey(candidate.item);
+    selected.push(unique.get(key));
+    selectedKeys.add(key);
+    if (selected.length >= resultLimit) return selected.map(({ item }) => item);
+  }
+
+  const remaining = [...unique.entries()]
+    .filter(([key]) => !selectedKeys.has(key))
+    .sort(([, left], [, right]) => (
+      right.rrfScore - left.rrfScore
+      || right.queryIndexes.size - left.queryIndexes.size
+      || right.bestScore - left.bestScore
+      || left.firstSeen - right.firstSeen
+    ));
+  for (const [key, entry] of remaining) {
+    selected.push(entry);
+    selectedKeys.add(key);
+    if (selected.length >= resultLimit) break;
+  }
+  return selected.map(({ item }) => item);
+}
+
 function normalizeConfig(value, fallback) {
   return normalizeRemoteKnowledgeConfig(value, fallback);
 }
@@ -140,23 +212,36 @@ function createRemoteKnowledgeService({ config, fetchImpl, timeoutMs, retryDelay
     };
   }
 
-  async function search({ query, scopes, matchCount, signal } = {}) {
+  async function searchMany({ queries, scopes, matchCount, signal } = {}) {
+    const normalizedQueries = normalizeSearchQueries(queries);
+    if (!normalizedQueries.length) return [];
     const groups = buildSearchGroups(scopes);
     const resultLimit = resolveMatchCount(matchCount);
-    const resultGroups = await runWithConcurrency(groups, SEARCH_CONCURRENCY, (group) => getClient().hybridSearch({
+    const jobs = normalizedQueries.flatMap((query, queryIndex) => groups.map((group, groupIndex) => ({
       query,
+      queryIndex,
+      group,
+      groupIndex,
+    })));
+    const resultGroups = await runWithConcurrency(jobs, SEARCH_CONCURRENCY, (job) => getClient().hybridSearch({
+      query: job.query,
       signal,
-      ...group,
+      ...job.group,
     }));
-    const unique = new Map();
-    for (const item of resultGroups.flat().map(mapSearchResult)) {
-      const key = `${item.knowledgeBaseId}:${item.knowledgeId}:${item.chunkId}`;
-      const current = unique.get(key);
-      if (!current || item.score > current.score) unique.set(key, item);
+    const perQueryResults = normalizedQueries.map(() => []);
+    let encounterIndex = 0;
+    for (const [jobIndex, results] of resultGroups.entries()) {
+      const queryResults = perQueryResults[jobs[jobIndex].queryIndex];
+      for (const result of results) {
+        queryResults.push({ item: mapSearchResult(result), encounterIndex });
+        encounterIndex += 1;
+      }
     }
-    return [...unique.values()]
-      .sort((left, right) => right.score - left.score)
-      .slice(0, resultLimit);
+    return fuseSearchResults(perQueryResults.map(rankQueryCandidates), resultLimit);
+  }
+
+  async function search({ query, scopes, matchCount, signal } = {}) {
+    return searchMany({ queries: [query], scopes, matchCount, signal });
   }
 
   async function testConnection(input = {}) {
@@ -178,7 +263,15 @@ function createRemoteKnowledgeService({ config, fetchImpl, timeoutMs, retryDelay
     }
   }
 
-  return { getConnectionConfig, getEndpointFingerprint, listDocuments, listKnowledgeBases, search, testConnection };
+  return {
+    getConnectionConfig,
+    getEndpointFingerprint,
+    listDocuments,
+    listKnowledgeBases,
+    search,
+    searchMany,
+    testConnection,
+  };
 }
 
 module.exports = {

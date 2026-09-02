@@ -79,6 +79,56 @@ test('splits whole-library and document-limited scopes to preserve mixed semanti
   assert.equal(Object.hasOwn(calls[1].body, 'match_count'), false);
 });
 
+test('searchMany sends every short query through the same remote scopes', async () => {
+  const calls = [];
+  const service = createServiceWithFetch(async (_url, init) => {
+    calls.push(JSON.parse(init.body));
+    return jsonResponse({ success: true, data: [] });
+  });
+
+  await service.searchMany({
+    queries: ['实施流程是什么？', '质量验收如何组织？'],
+    scopes: [{ knowledgeBaseId: 'kb-a', mode: 'all', documents: [] }],
+    matchCount: 8,
+  });
+
+  assert.deepEqual(calls.map((body) => body.query), ['实施流程是什么？', '质量验收如何组织？']);
+});
+
+test('searchMany does not dispatch an HTTP request for empty queries', async () => {
+  let calls = 0;
+  const service = createServiceWithFetch(async () => {
+    calls += 1;
+    return jsonResponse({ data: [] });
+  });
+
+  assert.deepEqual(await service.searchMany({ queries: [], scopes: [], matchCount: 8 }), []);
+  assert.equal(calls, 0);
+});
+
+test('searchMany bounds all query and scope requests to one shared pool', async () => {
+  let active = 0;
+  let maximumActive = 0;
+  const service = createServiceWithFetch(async () => {
+    active += 1;
+    maximumActive = Math.max(maximumActive, active);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    active -= 1;
+    return jsonResponse({ success: true, data: [] });
+  });
+
+  await service.searchMany({
+    queries: ['实施流程是什么？', '质量验收如何组织？'],
+    scopes: [
+      { knowledgeBaseId: 'kb-a', mode: 'all', documents: [] },
+      { knowledgeBaseId: 'kb-b', mode: 'documents', documents: [{ knowledgeId: 'doc-1' }] },
+    ],
+    matchCount: 8,
+  });
+
+  assert.equal(maximumActive, 3);
+});
+
 test('maps returned chunks to generic remote knowledge search results', async () => {
   const service = createServiceWithFetch(async () => jsonResponse({
     success: true,
@@ -167,6 +217,112 @@ test('deduplicates and score-sorts all mixed-scope results before applying the m
   assert.deepEqual(results.map((result) => [result.chunkId, result.content, result.score]), [
     ['duplicate', 'higher duplicate', 0.95],
     ['later-high', 'later high', 0.9],
+  ]);
+});
+
+test('searchMany covers every query before filling the RRF-ranked remainder without duplicate chunks', async () => {
+  const service = createServiceWithFetch(async (_url, init) => {
+    const { query } = JSON.parse(init.body);
+    if (query === '实施流程是什么？') {
+      return jsonResponse({ success: true, data: [
+        { id: 'chunk-a', knowledge_base_id: 'kb-a', knowledge_id: 'doc-1', content: '实施流程', score: 0.95 },
+        { id: 'chunk-shared', knowledge_base_id: 'kb-a', knowledge_id: 'doc-1', content: '共同依据', score: 0.9 },
+        { id: 'chunk-b', knowledge_base_id: 'kb-a', knowledge_id: 'doc-1', content: '流程补充', score: 0.85 },
+      ] });
+    }
+    return jsonResponse({ success: true, data: [
+      { id: 'chunk-c', knowledge_base_id: 'kb-a', knowledge_id: 'doc-1', content: '质量验收', score: 0.8 },
+      { id: 'chunk-shared', knowledge_base_id: 'kb-a', knowledge_id: 'doc-1', content: '共同依据', score: 0.75 },
+      { id: 'chunk-d', knowledge_base_id: 'kb-a', knowledge_id: 'doc-1', content: '验收补充', score: 0.7 },
+    ] });
+  });
+
+  const results = await service.searchMany({
+    queries: ['实施流程是什么？', '质量验收如何组织？'],
+    scopes: [{ knowledgeBaseId: 'kb-a', mode: 'all', documents: [] }],
+    matchCount: 3,
+  });
+
+  assert.deepEqual(results.map((item) => item.chunkId), ['chunk-a', 'chunk-c', 'chunk-shared']);
+  assert.deepEqual(new Set(results.map((item) => item.chunkId)), new Set(['chunk-a', 'chunk-c', 'chunk-shared']));
+  assert.equal(results.filter((item) => item.chunkId === 'chunk-shared').length, 1);
+});
+
+test('searchMany uses RRF rank contributions before a chunk best score when query coverage is complete', async () => {
+  const service = createServiceWithFetch(async (_url, init) => {
+    const { query } = JSON.parse(init.body);
+    if (query === '流程查询') {
+      return jsonResponse({ success: true, data: [
+        { id: 'chunk-a', knowledge_base_id: 'kb-a', knowledge_id: 'doc-1', content: '流程主结果', score: 0.3 },
+        { id: 'chunk-rrf', knowledge_base_id: 'kb-a', knowledge_id: 'doc-1', content: 'RRF 优先', score: 0.2 },
+        { id: 'chunk-middle', knowledge_base_id: 'kb-a', knowledge_id: 'doc-1', content: '中间结果', score: 0.15 },
+        { id: 'chunk-score', knowledge_base_id: 'kb-a', knowledge_id: 'doc-1', content: '高分结果', score: 0.1 },
+      ] });
+    }
+    return jsonResponse({ success: true, data: [
+      { id: 'chunk-c', knowledge_base_id: 'kb-a', knowledge_id: 'doc-1', content: '验收主结果', score: 0.99 },
+      { id: 'chunk-score', knowledge_base_id: 'kb-a', knowledge_id: 'doc-1', content: '高分结果', score: 0.98 },
+      { id: 'chunk-rrf', knowledge_base_id: 'kb-a', knowledge_id: 'doc-1', content: 'RRF 优先', score: 0.97 },
+    ] });
+  });
+
+  const results = await service.searchMany({
+    queries: ['流程查询', '验收查询'],
+    scopes: [{ knowledgeBaseId: 'kb-a', mode: 'all', documents: [] }],
+    matchCount: 3,
+  });
+
+  assert.deepEqual(results.map((item) => item.chunkId), ['chunk-a', 'chunk-c', 'chunk-rrf']);
+});
+
+test('searchMany keeps chunks with the same chunk ID from different remote documents', async () => {
+  const service = createServiceWithFetch(async (_url, init) => {
+    const body = JSON.parse(init.body);
+    if (Object.hasOwn(body, 'knowledge_ids')) {
+      return jsonResponse({ success: true, data: [
+        { id: 'same-chunk-id', knowledge_base_id: 'kb-b', knowledge_id: 'doc-2', content: '第二份文档', score: 0.8 },
+      ] });
+    }
+    return jsonResponse({ success: true, data: [
+      { id: 'same-chunk-id', knowledge_base_id: 'kb-a', knowledge_id: 'doc-1', content: '第一份文档', score: 0.9 },
+    ] });
+  });
+
+  const results = await service.searchMany({
+    queries: ['实施流程是什么？'],
+    scopes: [
+      { knowledgeBaseId: 'kb-a', mode: 'all', documents: [] },
+      { knowledgeBaseId: 'kb-b', mode: 'documents', documents: [{ knowledgeId: 'doc-2' }] },
+    ],
+    matchCount: 2,
+  });
+
+  assert.deepEqual(results.map((item) => item.id), [
+    'remote:kb-a:doc-1:same-chunk-id',
+    'remote:kb-b:doc-2:same-chunk-id',
+  ]);
+});
+
+test('searchMany limits each query to its top eight candidates before fusion', async () => {
+  const service = createServiceWithFetch(async () => jsonResponse({
+    success: true,
+    data: Array.from({ length: 9 }, (_value, index) => ({
+      id: `chunk-${index + 1}`,
+      knowledge_base_id: 'kb-a',
+      knowledge_id: 'doc-1',
+      content: `片段 ${index + 1}`,
+      score: 9 - index,
+    })),
+  }));
+
+  const results = await service.searchMany({
+    queries: ['实施流程是什么？'],
+    scopes: [{ knowledgeBaseId: 'kb-a', mode: 'all', documents: [] }],
+    matchCount: 9,
+  });
+
+  assert.deepEqual(results.map((item) => item.chunkId), [
+    'chunk-1', 'chunk-2', 'chunk-3', 'chunk-4', 'chunk-5', 'chunk-6', 'chunk-7', 'chunk-8',
   ]);
 });
 
