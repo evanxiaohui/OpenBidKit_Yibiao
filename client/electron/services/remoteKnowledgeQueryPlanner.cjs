@@ -30,18 +30,27 @@ function collectContextText(value, path = '', output = []) {
     return output;
   }
   if (value && typeof value === 'object') {
+    if (typeof value.title === 'string' && typeof value.description === 'string') {
+      output.push({ path, text: `${value.title}：${value.description}` });
+    }
     Object.entries(value).forEach(([key, item]) => collectContextText(item, path ? `${path}.${key}` : key, output));
   }
   return output;
 }
 
-const CATEGORY_RULES = [
-  { keys: ['实施', '流程', '步骤', '组织', '进度', '工期'], template: (topic) => `围绕“${topic}”，该类项目通常包含哪些专业实施阶段和成果要求？` },
-  { keys: ['质量', '验收', '成果汇交', '数据库更新', '检查', '整改'], template: (topic) => `“${topic}”相关的质量控制、验收与成果交付通常如何组织？` },
-  { keys: ['技术', '标准', '规范', '方法', '系统', '数据'], template: (topic) => `“${topic}”涉及哪些技术方法、标准规范和数据成果要求？` },
-  { keys: ['安全', '保密', '风险', '应急'], template: (topic) => `“${topic}”相关的安全风险、保密要求和应急措施有哪些？` },
-  { keys: ['人员', '团队', '项目经理', '培训', '服务'], template: (topic) => `“${topic}”需要怎样的人员配置、服务组织和保障机制？` },
-];
+const CATEGORY_RULES = {
+  implementation: { keys: ['实施', '流程', '步骤', '组织', '进度', '工期'], template: (topic, stage) => stage === 'outline' ? `目录编排中的“${topic}”应如何划分实施阶段和成果要求？` : `围绕“${topic}”，该类项目通常包含哪些专业实施阶段和成果要求？` },
+  quality: { keys: ['质量', '验收', '成果汇交', '数据库更新', '检查', '整改'], template: (topic, stage) => stage === 'global-facts' ? `“${topic}”相关的质量事实、验收依据与成果交付通常如何确认？` : `“${topic}”相关的质量控制、验收与成果交付通常如何组织？` },
+  technical: { keys: ['技术', '标准', '规范', '方法', '系统', '数据'], template: (topic, stage) => stage === 'content-planning' ? `章节“${topic}”应落实哪些技术方法、标准规范和数据成果要求？` : `“${topic}”涉及哪些技术方法、标准规范和数据成果要求？` },
+  security: { keys: ['安全', '保密', '风险', '应急'], template: (topic) => `“${topic}”相关的安全风险、保密要求和应急措施有哪些？` },
+  personnel: { keys: ['人员', '团队', '项目经理', '培训', '服务'], template: (topic) => `“${topic}”需要怎样的人员配置、服务组织和保障机制？` },
+};
+
+const STAGE_CATEGORY_ORDER = {
+  outline: ['implementation', 'technical', 'quality', 'personnel', 'security'],
+  'global-facts': ['quality', 'technical', 'implementation', 'security', 'personnel'],
+  'content-planning': ['technical', 'quality', 'implementation', 'personnel', 'security'],
+};
 
 function splitSentences(text) {
   return String(text || '')
@@ -50,15 +59,26 @@ function splitSentences(text) {
     .filter(Boolean);
 }
 
+function informationScore(sentence, rule) {
+  const matched = rule.keys.filter((key) => sentence.includes(key));
+  const specific = matched.filter((key) => key.length >= 3).length;
+  return matched.length * 10 + specific * 8 + Math.min(sentence.length, 120) / 120;
+}
+
 function buildFallbackQueries(stage, context) {
   const entries = collectContextText(context);
   const sentences = entries.flatMap(({ text }) => splitSentences(text));
   const selected = [];
   const seenTopics = new Set();
-  for (const rule of CATEGORY_RULES) {
-    const sentence = sentences.find((item) => rule.keys.some((key) => item.includes(key)));
+  const categoryOrder = STAGE_CATEGORY_ORDER[stage] || STAGE_CATEGORY_ORDER['global-facts'];
+  for (const category of categoryOrder) {
+    const rule = CATEGORY_RULES[category];
+    const candidates = sentences.filter((item) => rule.keys.some((key) => item.includes(key)));
+    const sentence = candidates
+      .map((item, index) => ({ item, index, score: informationScore(item, rule) }))
+      .sort((left, right) => right.score - left.score || right.index - left.index)[0]?.item;
     if (!sentence || seenTopics.has(sentence)) continue;
-    const query = normalizeQuery(rule.template(sentence));
+    const query = normalizeQuery(rule.template(sentence, stage));
     if (query.length <= MAX_QUERY_LENGTH) {
       selected.push(query);
       seenTopics.add(sentence);

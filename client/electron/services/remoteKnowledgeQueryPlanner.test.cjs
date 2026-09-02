@@ -28,6 +28,26 @@ test('global-facts fallback scans the complete source and preserves a relevant t
   assert.ok(queries.every((query) => query.length <= 240));
 });
 
+test('fallback chooses the highest-information sentence within a category', () => {
+  const queries = buildFallbackQueries('global-facts', {
+    source: '项目质量控制应符合相关要求。最终成果汇交包括成果数据库更新、检查验收和资料归档。',
+  });
+  assert.ok(queries.some((query) => /成果汇交|数据库更新/.test(query)));
+});
+
+test('fallback behavior is stage-aware for the same context', () => {
+  const context = { source: '项目实施流程、技术标准、质量验收和人员培训均有明确要求。' };
+  const outline = buildFallbackQueries('outline', context);
+  const globalFacts = buildFallbackQueries('global-facts', context);
+  const contentPlanning = buildFallbackQueries('content-planning', context);
+  assert.notDeepEqual(outline, globalFacts);
+  assert.notDeepEqual(globalFacts, contentPlanning);
+  for (const queries of [outline, globalFacts, contentPlanning]) {
+    assert.ok(queries.length >= 1 && queries.length <= 5);
+    assert.ok(queries.every((query) => query.length <= 240));
+  }
+});
+
 test('uses complete context for AI planning and returns validated short queries', async () => {
   let request;
   const tailMarker = '材料末尾专项主题：不动产登记成果汇交';
