@@ -60,7 +60,7 @@ function App() {
     <>
       <GpuHardwareAccelerationPrompt />
       <RequiredOnlineServicesPrompt />
-      <UpdateNotifier noticeEnabled />
+      <UpdateNotifier noticeEnabled={false} />
       <AppShell
         activeSection={activeSection}
         developerMode={developerMode}

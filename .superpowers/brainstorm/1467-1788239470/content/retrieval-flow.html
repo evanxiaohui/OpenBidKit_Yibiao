@@ -1,0 +1,62 @@
+<style>
+  .flow { display:grid; grid-template-columns:1fr 44px 1fr 44px 1fr; gap:8px; align-items:stretch; margin:22px 0; }
+  .node { border:1px solid #d7dfeb; border-radius:14px; padding:16px; background:#fff; min-height:118px; }
+  .node.primary { border-color:#7aa2e3; background:#f5f9ff; }
+  .node.guard { border-color:#e3ad62; background:#fff9f0; }
+  .node strong { display:block; margin-bottom:7px; color:#24344c; }
+  .node p { margin:0; font-size:13px; line-height:1.55; color:#627087; }
+  .arrow { display:grid; place-items:center; color:#6c87ac; font-size:28px; font-weight:300; }
+  .stage-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; margin:16px 0 22px; }
+  .stage { border:1px solid #dde4ee; border-radius:12px; padding:14px; background:#fff; }
+  .stage span { display:inline-grid; width:24px; height:24px; place-items:center; border-radius:50%; background:#eaf2ff; color:#2d67bd; font-weight:800; font-size:12px; }
+  .stage strong { display:block; margin:9px 0 5px; }
+  .stage p { margin:0; color:#657287; font-size:12px; line-height:1.55; }
+  .rules { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .rule { display:flex; gap:10px; border-radius:10px; background:#f7f9fc; padding:12px; font-size:13px; line-height:1.55; color:#4f5e73; }
+  .rule b { color:#2d67bd; }
+  .decision { margin-top:22px; display:flex; gap:12px; }
+  .decision .option { flex:1; }
+  @media (max-width:1000px) { .flow { grid-template-columns:1fr; } .arrow { transform:rotate(90deg); height:24px; } .stage-grid,.rules { grid-template-columns:1fr 1fr; } }
+</style>
+
+<h2>动态检索与生成数据流</h2>
+<p class="subtitle">远程选择只定义“允许检索的范围”，每个生成阶段依据当前任务动态召回相关片段。</p>
+
+<div class="flow">
+  <div class="node primary"><strong>① 读取方案选择快照</strong><p>本地文档 ID + 远程整库/指定文档范围。没有远程选择时，不发起任何远程请求。</p></div>
+  <div class="arrow">→</div>
+  <div class="node guard"><strong>② 远程预检</strong><p>校验服务可达、Key 有效、所选知识库/文档仍可访问。失败则在生成前阻止任务。</p></div>
+  <div class="arrow">→</div>
+  <div class="node primary"><strong>③ 分阶段生成检索词</strong><p>依据项目概况、评分点、事实主题或当前正文小节构建查询，不由用户手工维护检索词。</p></div>
+</div>
+
+<div class="stage-grid">
+  <div class="stage"><span>1</span><strong>目录生成</strong><p>围绕评分点、技术要求和原方案目录缺口检索；仅使用原方案目录模式保持现有例外。</p></div>
+  <div class="stage"><span>2</span><strong>全局事实</strong><p>按已有事实主题检索，仅补充已有主题，不因远程内容新增事实大项。</p></div>
+  <div class="stage"><span>3</span><strong>正文规划</strong><p>按章节目标检索候选片段，生成带命名空间的远程引用 ID，避免与本地条目冲突。</p></div>
+  <div class="stage"><span>4</span><strong>正文生成</strong><p>使用规划阶段锁定的片段快照；任务恢复时结果不漂移，同时继续检查远程服务可用性。</p></div>
+</div>
+
+<div class="flow">
+  <div class="node"><strong>本地知识</strong><p>读取现有条目或 Markdown，不改变本地知识库处理方式。</p></div>
+  <div class="arrow">＋</div>
+  <div class="node"><strong>远程知识</strong><p>调用 WeKnora v0.7.2+ 的 POST /knowledge-search，携带知识库与文档范围。</p></div>
+  <div class="arrow">→</div>
+  <div class="node primary"><strong>统一知识引用网关</strong><p>标准化、去重、按相关度排序、限制总字符量，并保留来源与文档标题供日志追踪。</p></div>
+</div>
+
+<div class="rules">
+  <div class="rule"><b>失败：</b><span>401/403、超时、资源失效或检索异常都停止任务，并给出可操作的中文错误；不静默改用本地知识。</span></div>
+  <div class="rule"><b>零命中：</b><span>服务调用成功但没有相关片段不算故障；记录“未召回远程知识”，该阶段继续生成。</span></div>
+  <div class="rule"><b>优先级：</b><span>当前招标文件、用户确认信息和原方案始终高于本地/远程参考知识；参考材料必须结合当前项目改写。</span></div>
+  <div class="rule"><b>可恢复：</b><span>正文任务把已采用远程片段保存进任务运行快照，而不是建立可供离线使用的通用知识缓存。</span></div>
+</div>
+
+<div class="decision options">
+  <div class="option" data-choice="confirm-retrieval-flow" onclick="toggleSelect(this)">
+    <div class="letter">✓</div><div class="content"><h3>确认该数据流</h3><p>继续设计错误处理与验收范围</p></div>
+  </div>
+  <div class="option" data-choice="revise-retrieval-flow" onclick="toggleSelect(this)">
+    <div class="letter">↺</div><div class="content"><h3>需要调整</h3><p>回到对话说明希望修改的位置</p></div>
+  </div>
+</div>
