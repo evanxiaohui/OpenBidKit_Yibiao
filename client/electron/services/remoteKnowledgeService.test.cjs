@@ -129,6 +129,51 @@ test('searchMany bounds all query and scope requests to one shared pool', async 
   assert.equal(maximumActive, 3);
 });
 
+test('searchMany limits distinct query concurrency to two while allowing three total requests', async () => {
+  let activeRequests = 0;
+  let maximumRequests = 0;
+  const activeQueries = new Set();
+  let maximumQueries = 0;
+  const service = createServiceWithFetch(async (_url, init) => {
+    const query = JSON.parse(init.body).query;
+    activeRequests += 1;
+    activeQueries.add(query);
+    maximumRequests = Math.max(maximumRequests, activeRequests);
+    maximumQueries = Math.max(maximumQueries, activeQueries.size);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    activeRequests -= 1;
+    activeQueries.delete(query);
+    return jsonResponse({ success: true, data: [] });
+  });
+  await service.searchMany({
+    queries: ['查询一', '查询二', '查询三'],
+    scopes: [{ knowledgeBaseId: 'kb-a', mode: 'all', documents: [] }],
+    matchCount: 8,
+  });
+  assert.ok(maximumQueries <= 2);
+  assert.ok(maximumRequests <= 3);
+});
+
+test('searchMany cancels queued jobs after the first HTTP failure', async () => {
+  const calls = [];
+  const service = createServiceWithFetch(async (_url, init) => {
+    const query = JSON.parse(init.body).query;
+    calls.push(query);
+    if (query === '查询一') {
+      return jsonResponse({ error: 'first failure' }, 400);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    return jsonResponse({ success: true, data: [] });
+  });
+  const pending = service.searchMany({
+    queries: ['查询一', '查询二', '查询三'],
+    scopes: [{ knowledgeBaseId: 'kb-a', mode: 'all', documents: [] }],
+    matchCount: 8,
+  });
+  await assert.rejects(pending, (error) => error?.category === 'http');
+  assert.deepEqual(calls, ['查询一', '查询二']);
+});
+
 test('maps returned chunks to generic remote knowledge search results', async () => {
   const service = createServiceWithFetch(async () => jsonResponse({
     success: true,

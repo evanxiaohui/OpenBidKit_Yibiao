@@ -3950,7 +3950,7 @@ async function runContentGenerationTask({ aiService, agentService, workspaceStor
   }
 
   async function retrieveRemoteKnowledgeForPlanning(context) {
-    if (!knowledgeSession?.searchRemote) return [];
+    if (!knowledgeSession?.searchRemote || (Array.isArray(knowledgeSession.remoteScopes) && knowledgeSession.remoteScopes.length === 0)) return [];
     try {
       const queryPlan = await planRemoteKnowledgeQueries({
         aiService,

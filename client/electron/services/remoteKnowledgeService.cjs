@@ -58,18 +58,61 @@ function mapSearchResult(item) {
   };
 }
 
-async function runWithConcurrency(items, limit, action) {
-  const results = new Array(items.length);
-  let nextIndex = 0;
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (nextIndex < items.length) {
-      const index = nextIndex;
-      nextIndex += 1;
-      results[index] = await action(items[index]);
-    }
+function runSearchJobs(jobs, action, parentSignal) {
+  if (!jobs.length) return Promise.resolve([]);
+  const groupController = new AbortController();
+  let parentAbortHandler;
+  if (parentSignal) {
+    parentAbortHandler = () => groupController.abort(parentSignal.reason);
+    if (parentSignal.aborted) groupController.abort(parentSignal.reason);
+    else parentSignal.addEventListener('abort', parentAbortHandler, { once: true });
+  }
+  return new Promise((resolve, reject) => {
+    const queue = jobs.map((job, index) => ({ ...job, originalIndex: index }));
+    const totalJobs = queue.length;
+    const results = new Array(totalJobs);
+    const activeByQuery = new Map();
+    let activeRequests = 0;
+    let completed = 0;
+    let firstError = null;
+    let settled = false;
+
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      if (parentSignal && parentAbortHandler) parentSignal.removeEventListener('abort', parentAbortHandler);
+      if (firstError) reject(firstError); else resolve(results);
+    };
+
+    const run = () => {
+      if (firstError || groupController.signal.aborted) { if (!activeRequests) finish(); return; }
+      while (queue.length && activeRequests < SEARCH_CONCURRENCY) {
+        let selected = -1;
+        for (let index = 0; index < queue.length; index += 1) {
+          const q = queue[index].queryIndex;
+          if (activeByQuery.has(q) || activeByQuery.size < 2) { selected = index; break; }
+        }
+        if (selected < 0) break;
+        const job = queue.splice(selected, 1)[0];
+        activeRequests += 1;
+        activeByQuery.set(job.queryIndex, (activeByQuery.get(job.queryIndex) || 0) + 1);
+        Promise.resolve().then(() => action(job, groupController.signal)).then((value) => { results[job.originalIndex] = value; }).catch((error) => {
+          if (!firstError) { firstError = error; groupController.abort(error); }
+        }).finally(() => {
+          activeRequests -= 1;
+          completed += 1;
+          const remaining = (activeByQuery.get(job.queryIndex) || 1) - 1;
+          if (remaining > 0) activeByQuery.set(job.queryIndex, remaining); else activeByQuery.delete(job.queryIndex);
+          if (completed >= totalJobs || (firstError && !activeRequests)) finish(); else run();
+        });
+      }
+      if (completed >= totalJobs || (firstError && !activeRequests)) finish();
+    };
+    if (parentSignal?.aborted) {
+      firstError = parentSignal.reason || Object.assign(new Error('远程知识查询已取消'), { name: 'AbortError' });
+      finish();
+    } else run();
   });
-  await Promise.all(workers);
-  return results;
 }
 
 function buildSearchGroups(scopes) {
@@ -223,11 +266,11 @@ function createRemoteKnowledgeService({ config, fetchImpl, timeoutMs, retryDelay
       group,
       groupIndex,
     })));
-    const resultGroups = await runWithConcurrency(jobs, SEARCH_CONCURRENCY, (job) => getClient().hybridSearch({
+    const resultGroups = await runSearchJobs(jobs, (job, groupSignal) => getClient().hybridSearch({
       query: job.query,
-      signal,
+      signal: groupSignal,
       ...job.group,
-    }));
+    }), signal);
     const perQueryResults = normalizedQueries.map(() => []);
     let encounterIndex = 0;
     for (const [jobIndex, results] of resultGroups.entries()) {

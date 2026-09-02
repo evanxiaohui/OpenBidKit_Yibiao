@@ -727,7 +727,7 @@ async function runOutlineGenerationTaskV2({ aiService, agentService, ordinaryAge
         : '严格按照响应文件要求.md 组织一级目录，它是目录结构和标题来源的唯一依据。项目概述.md 仅用于理解背景和术语，不得据此新增一级目录。';
   }
   let remoteKnowledgeFile = null;
-  if (!originalOnly && knowledgeSession?.searchRemote) {
+  if (!originalOnly && knowledgeSession?.searchRemote && (!Array.isArray(knowledgeSession.remoteScopes) || knowledgeSession.remoteScopes.length > 0)) {
     const queryPlan = await planRemoteKnowledgeQueries({
       aiService,
       stage: 'outline',

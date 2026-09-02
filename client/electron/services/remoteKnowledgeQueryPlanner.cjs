@@ -14,7 +14,7 @@ function normalizePlannedQueries(value) {
   const queries = [];
   for (const raw of Array.isArray(value?.queries) ? value.queries : []) {
     const query = normalizeQuery(raw);
-    if (!query || query.length > MAX_QUERY_LENGTH || seen.has(query)) continue;
+    if (!query || query.length > MAX_QUERY_LENGTH || query.length > 160 || (query.length > 80 && (query.match(/[。！？!?；;，,、]/g) || []).length >= 3) || seen.has(query)) continue;
     seen.add(query);
     queries.push(query);
     if (queries.length === MAX_QUERY_COUNT) break;
@@ -67,11 +67,37 @@ function informationScore(sentence, rule) {
   return matched.length * 10 + specific * 8 + Math.min(sentence.length, 120) / 120;
 }
 
+function deriveMaterialTopic(sentence, rule) {
+  const text = normalizeQuery(sentence).replace(/^[：:，,、\-\s]+|[：:，,、\-\s]+$/g, '');
+  if (text.length <= 36) return text;
+  const projectMatch = text.match(/(?:本项目|本工程|项目名称|业务主题)?[^。！？!?；;，,]{2,24}(?:项目|工程|系统|平台|服务|建设)/);
+  if (projectMatch?.[0]) return projectMatch[0].replace(/^本项目/, '').trim();
+  const index = rule.keys.reduce((best, key) => {
+    const found = text.indexOf(key);
+    return found >= 0 && (best < 0 || found < best) ? found : best;
+  }, -1);
+  if (index >= 0) return text.slice(Math.max(0, index - 10), Math.min(text.length, index + 24));
+  return text.slice(0, 28);
+}
+
+function buildProjectTopicQuery(stage, context) {
+  const source = context?.projectName || context?.businessTopic || context?.projectOverview;
+  const text = normalizeQuery(source);
+  if (!text) return '';
+  const topic = deriveMaterialTopic(text, { keys: ['项目', '业务', '行业', '建设', '平台', '系统'] });
+  if (!topic || topic.length < 2) return '';
+  if (stage === 'outline') return `“${topic}”类项目的目录应覆盖哪些实施流程、成果交付和管理主题？`;
+  if (stage === 'global-facts') return `“${topic}”项目的服务范围、实施规模和验收口径通常如何统一？`;
+  return `章节“${topic}”相关的专业实施方法和质量要求有哪些？`;
+}
+
 function buildFallbackQueries(stage, context) {
   const entries = collectContextText(context);
   const sentences = entries.flatMap(({ text }) => splitSentences(text));
   const selected = [];
   const seenTopics = new Set();
+  const projectQuery = buildProjectTopicQuery(stage, context);
+  if (projectQuery && projectQuery.length <= MAX_QUERY_LENGTH) selected.push(projectQuery);
   const categoryOrder = STAGE_CATEGORY_ORDER[stage] || STAGE_CATEGORY_ORDER['global-facts'];
   for (const category of categoryOrder) {
     const rule = CATEGORY_RULES[category];
@@ -80,7 +106,8 @@ function buildFallbackQueries(stage, context) {
       .map((item, index) => ({ item, index, score: informationScore(item, rule) }))
       .sort((left, right) => right.score - left.score || right.index - left.index)[0]?.item;
     if (!sentence || seenTopics.has(sentence)) continue;
-    const query = normalizeQuery(rule.template(sentence, stage));
+    const topic = deriveMaterialTopic(sentence, rule);
+    const query = normalizeQuery(rule.template(topic, stage));
     if (query.length <= MAX_QUERY_LENGTH) {
       selected.push(query);
       seenTopics.add(sentence);

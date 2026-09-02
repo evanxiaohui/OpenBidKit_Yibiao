@@ -29,7 +29,7 @@ test('uses namespaced IDs and keeps local references before remote references', 
   assert.deepEqual([...local, ...remote].map((item) => item.id), ['local:local-doc:local-item', 'remote:kb-1:doc-1:chunk-high']);
 });
 
-test('deduplicates remote chunks by source and preserves highest score ordering', async () => {
+test('deduplicates remote chunks by source while preserving fused order', async () => {
   const session = createSession({ remoteKnowledgeService: { searchMany: async () => [
     { id: 'remote:kb-1:doc-1:chunk-a', origin: 'remote', knowledgeBaseId: 'kb-1', knowledgeId: 'doc-1', chunkId: 'chunk-a', title: 'A', content: 'low', score: 0.2 },
     { id: 'remote:kb-1:doc-1:chunk-a', origin: 'remote', knowledgeBaseId: 'kb-1', knowledgeId: 'doc-1', chunkId: 'chunk-a', title: 'A', content: 'high', score: 0.8 },
@@ -40,6 +40,15 @@ test('deduplicates remote chunks by source and preserves highest score ordering'
     ['remote:kb-1:doc-1:chunk-a', 0.8, 'high'],
     ['remote:kb-1:doc-1:chunk-b', 0.5, 'mid'],
   ]);
+});
+
+test('does not reorder fused remote results by raw score', async () => {
+  const session = createSession({ remoteKnowledgeService: { searchMany: async () => [
+    { id: 'remote:kb-1:doc-1:chunk-first', origin: 'remote', knowledgeBaseId: 'kb-1', knowledgeId: 'doc-1', chunkId: 'chunk-first', score: 0.2 },
+    { id: 'remote:kb-1:doc-1:chunk-later', origin: 'remote', knowledgeBaseId: 'kb-1', knowledgeId: 'doc-1', chunkId: 'chunk-later', score: 0.9 },
+  ] } });
+  const result = await session.searchRemote({ stage: 'outline', query: '项目', matchCount: 8 });
+  assert.deepEqual(result.map((item) => item.chunkId), ['chunk-first', 'chunk-later']);
 });
 
 test('keeps a multi-query group behind one pending task decision', async () => {
@@ -89,6 +98,16 @@ test('does not dispatch remote searchMany when no valid query is provided', asyn
   let calls = 0;
   const session = createSession({ remoteKnowledgeService: { searchMany: async () => { calls += 1; return []; } } });
   assert.deepEqual(await session.searchRemote({ stage: 'outline', queries: ['  ', null] }), []);
+  assert.equal(calls, 0);
+});
+
+test('does not dispatch remote searchMany when the task has no selected remote scopes', async () => {
+  let calls = 0;
+  const session = createSession({
+    sessionInput: { remoteScopes: [] },
+    remoteKnowledgeService: { searchMany: async () => { calls += 1; return []; } },
+  });
+  assert.deepEqual(await session.searchRemote({ stage: 'outline', query: '项目' }), []);
   assert.equal(calls, 0);
 });
 

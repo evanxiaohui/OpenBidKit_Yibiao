@@ -445,7 +445,7 @@ async function runGlobalFactsTaskV2({
     outline: outlineData.outline || [],
   });
   let remoteKnowledgeFile = null;
-  if (knowledgeSession?.searchRemote && retrievalTopics.length) {
+  if (knowledgeSession?.searchRemote && (!Array.isArray(knowledgeSession.remoteScopes) || knowledgeSession.remoteScopes.length > 0) && retrievalTopics.length) {
     const remaining = Math.max(0, 8 - knowledgeItems.length);
     if (remaining > 0) {
       const queryPlan = await planRemoteKnowledgeQueries({

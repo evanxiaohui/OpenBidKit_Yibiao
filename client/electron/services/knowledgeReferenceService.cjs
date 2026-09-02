@@ -64,7 +64,7 @@ function createKnowledgeReferenceService({ knowledgeBaseService, remoteKnowledge
         const legacyQuery = String(query || '').trim();
         if (legacyQuery) normalizedQueries.push(legacyQuery);
       }
-      if (!normalizedQueries.length || session.remoteDisabledForRun || !remoteKnowledgeService || typeof remoteKnowledgeService.searchMany !== 'function') return [];
+      if (!normalizedQueries.length || !session.remoteScopes.length || session.remoteDisabledForRun || !remoteKnowledgeService || typeof remoteKnowledgeService.searchMany !== 'function') return [];
       const limit = normalizeCount(matchCount);
       let joinedDecisionWait = false;
       const joinDecisionWait = () => {
@@ -93,7 +93,7 @@ function createKnowledgeReferenceService({ knowledgeBaseService, remoteKnowledge
               const current = unique.get(key);
               if (!current || Number(item.score || 0) > Number(current.score || 0)) unique.set(key, item);
             }
-            return [...unique.values()].sort((a, b) => Number(b.score || 0) - Number(a.score || 0)).slice(0, limit);
+            return [...unique.values()].slice(0, limit);
           } catch (error) {
             joinDecisionWait();
             const decisionPromise = decisionService.waitForDecision({ taskId: session.taskId, workflow: session.workflow, stage, error, signal: session.signal });

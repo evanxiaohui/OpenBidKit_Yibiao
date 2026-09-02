@@ -48,6 +48,25 @@ test('fallback behavior is stage-aware for the same context', () => {
   }
 });
 
+test('fallback derives a short project topic instead of copying a raw source sentence', () => {
+  const source = '本项目为某市不动产登记成果数据库建设服务，需统筹实施、质量验收、资料归档和后续运维保障等工作。';
+  const queries = buildFallbackQueries('outline', { projectOverview: source });
+  assert.ok(queries.some((query) => /不动产登记|数据库建设/.test(query)));
+  assert.ok(queries.every((query) => query.length < source.length));
+  assert.ok(queries.every((query) => !query.includes(source)));
+});
+
+test('rejects raw paragraph-like AI output instead of truncating it', async () => {
+  const rawParagraph = `本项目需要结合现场调研、数据整理、系统建设、质量检查、成果汇交和持续运维等多个环节，形成完整的实施方案并满足招标文件中的全部要求。${'补充说明'.repeat(12)}`;
+  const result = await planRemoteKnowledgeQueries({
+    aiService: { collectJsonResponse: async (input) => input.normalizer({ queries: [rawParagraph] }) },
+    stage: 'outline',
+    context: { projectOverview: '不动产登记数据库项目' },
+  });
+  assert.equal(result.source, 'fallback');
+  assert.ok(result.queries.every((query) => !query.includes('本项目需要结合现场调研')));
+});
+
 test('uses complete context for AI planning and returns validated short queries', async () => {
   let request;
   const tailMarker = '材料末尾专项主题：不动产登记成果汇交';
