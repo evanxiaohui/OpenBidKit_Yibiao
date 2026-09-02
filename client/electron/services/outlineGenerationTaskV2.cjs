@@ -528,8 +528,7 @@ function buildOutlineRetrievalQuery({ projectOverview = '', responseRequirements
   return [projectOverview, responseRequirements, technicalRequirements, outlineTarget]
     .map((value) => String(value || '').replace(/\s+/g, ' ').trim())
     .filter(Boolean)
-    .join('；')
-    .slice(0, 1800);
+    .join('；');
 }
 
 function createInitialPrompt(taskInstruction, { standaloneTechnical = false, hasRemoteKnowledge = false } = {}) {

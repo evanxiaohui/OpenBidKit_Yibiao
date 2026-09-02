@@ -10,15 +10,53 @@ const {
   runGlobalFactsTaskV2,
 } = require('./globalFactsTaskV2.cjs');
 
-test('全局事实检索主题只来自项目概述、招标解析和已确认目录', () => {
+test('全局事实检索主题完整保留项目概述、招标解析和已确认目录', () => {
   const topics = buildGlobalFactsRetrievalTopics({
     projectOverview: '智慧水务平台建设',
     bidAnalysis: '工期 180 日历天，提供运维服务',
     outline: [{ id: '1', title: '平台总体设计', description: '总体架构与实施' }],
   });
-  assert.ok(topics.length > 0 && topics.length <= 8);
+  assert.ok(topics.length > 0);
   assert.ok(topics.every((topic) => !/远程正文|知识库新增话题/.test(topic)));
   assert.match(topics.join(' '), /智慧水务|工期|平台总体设计/);
+});
+
+test('全局事实远程检索查询保留超过旧上限的项目概述末尾', async () => {
+  const searches = [];
+  const projectOverview = `项目概述开头${'项目概述正文'.repeat(400)}项目概述末尾`;
+  const state = {
+    tenderFile: { fileName: '招标.md' },
+    projectOverview,
+    outlineData: { outline: [{ id: '1', title: '平台总体设计', description: '总体架构' }] },
+  };
+  const workspaceStore = {
+    loadTechnicalPlan: () => state,
+    readTenderMarkdown: () => '本项目工期为 180 日历天。',
+  };
+  const checkpointTask = (patch, data) => ({ task: {
+    task_id: 'task-global-facts-full-query-test',
+    stats: data?.globalFacts ? { globalFacts: data.globalFacts } : {},
+    logs: [],
+    ...patch,
+  } });
+
+  await runGlobalFactsTaskV2({
+    agentService: {
+      runTask: async () => ({ output_content: JSON.stringify({ groups: [{ id: 'schedule', title: '项目工期', content: '- 工期：180 日历天' }] }) }),
+      updatePersistentTask() {},
+    },
+    workspaceStore,
+    knowledgeBaseService: { readReferences: () => [] },
+    knowledgeSession: { searchRemote: async (input) => { searches.push(input); return []; } },
+    updateTask: (patch) => ({ task_id: 'task-global-facts-full-query-test', stats: {}, logs: [], ...patch }),
+    checkpointTask,
+    taskControl: { signal: new AbortController().signal },
+    payload: {},
+  });
+
+  assert.equal(searches.length, 1);
+  assert.ok(searches[0].query.length > 1800);
+  assert.match(searches[0].query, /项目概述末尾/);
 });
 
 test('全局事实远程参考文件只作为不可信补充材料', () => {

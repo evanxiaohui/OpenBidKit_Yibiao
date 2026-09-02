@@ -7,6 +7,7 @@ const {
   createChildrenPrompt,
   enforceMinimumLeafTarget,
   buildRemoteKnowledgeFile,
+  buildOutlineRetrievalQuery,
   runOutlineGenerationTaskV2,
 } = require('./outlineGenerationTaskV2.cjs');
 
@@ -70,6 +71,25 @@ test('远程目录参考文件明确标记为不可信材料且不泄露内部�
   assert.match(file.content, /规范片段/);
   assert.match(file.content, /远程正文/);
   assert.doesNotMatch(file.content, /kb-secret|doc-secret|chunk-secret/);
+});
+
+test('目录远程检索查询保留完整项目概述、响应要求和评分信息', () => {
+  const projectOverview = `项目概述开头${'项目概述正文'.repeat(220)}项目概述末尾`;
+  const responseRequirements = `响应要求开头${'响应要求正文'.repeat(720)}响应要求末尾`;
+  const technicalRequirements = `评分信息开头${'评分信息正文'.repeat(260)}评分信息末尾`;
+
+  const query = buildOutlineRetrievalQuery({
+    projectOverview,
+    responseRequirements,
+    technicalRequirements,
+    outlineTarget: '目录目标末尾',
+  });
+
+  assert.ok(query.length > 1800);
+  assert.match(query, /项目概述末尾/);
+  assert.match(query, /响应要求末尾/);
+  assert.match(query, /评分信息末尾/);
+  assert.match(query, /目录目标末尾/);
 });
 
 test('original-only 真实目录任务不调用远程检索，也不注入远程文件', async () => {

@@ -155,10 +155,9 @@ function buildGlobalFactsRetrievalTopics({ projectOverview = '', bidAnalysis = '
   const topics = [];
   for (const part of parts) {
     if (!topics.includes(part)) topics.push(part);
-    if (topics.length >= 8) break;
   }
-  if (!topics.length) topics.push(raw.slice(0, 240));
-  return topics.map((topic) => topic.slice(0, 240));
+  if (!topics.length) topics.push(raw);
+  return topics;
 }
 
 function buildRemoteKnowledgeFile(items = []) {
@@ -449,7 +448,7 @@ async function runGlobalFactsTaskV2({
     if (remaining > 0) {
       const remoteItems = await knowledgeSession.searchRemote({
         stage: 'global-facts',
-        query: retrievalTopics.join('；').slice(0, 1800),
+        query: retrievalTopics.join('；'),
         matchCount: remaining,
       });
       remoteKnowledgeFile = buildRemoteKnowledgeFile(remoteItems);
