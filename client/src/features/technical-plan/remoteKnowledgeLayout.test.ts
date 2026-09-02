@@ -46,7 +46,7 @@ test('reference knowledge tabs and remote browser use knowledge-base labels and 
   assert.match(outlinePage, />本地知识库<\/button>/);
   assert.match(outlinePage, />远程知识库<\/button>/);
   assert.match(remotePicker, /className="outline-knowledge-pane-head remote-knowledge-pane-head"/);
-  assert.match(remotePicker, /<strong>远程知识库<\/strong>/);
-  assert.match(remotePicker, /有 \{bases\.length\} 个知识库/);
+  assert.match(remotePicker, /<strong>知识库<\/strong>/);
+  assert.match(remotePicker, /<span>\{bases\.length\} 个知识库<\/span>/);
   assert.match(settingsPage, /\{ id: 'remote-knowledge', label: '远程知识库' \}/);
 });

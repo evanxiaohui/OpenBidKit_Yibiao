@@ -43,8 +43,8 @@ export default function RemoteKnowledgePicker({ scopes, disabled = false, onChan
   };
   return <div className="remote-knowledge-picker outline-knowledge-browser">
     <div className="outline-knowledge-pane-head remote-knowledge-pane-head">
-      <strong>远程知识库</strong>
-      <span>有 {bases.length} 个知识库</span>
+      <strong>知识库</strong>
+      <span>{bases.length} 个知识库</span>
     </div>
     {error && <div className="outline-knowledge-error">{error}<button className="remote-knowledge-action" type="button" onClick={() => { const action = retry || (() => void loadBases()); setError(''); action(); }}>重试</button></div>}
     {loading && <div className="outline-knowledge-empty compact">正在读取远程知识库...</div>}
