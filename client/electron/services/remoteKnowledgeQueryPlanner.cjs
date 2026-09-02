@@ -1,5 +1,7 @@
 'use strict';
 
+const { AI_QUEUE_SCOPE_PAUSED } = require('../utils/aiRequestQueue.cjs');
+
 const MAX_QUERY_COUNT = 5;
 const MAX_QUERY_LENGTH = 240;
 
@@ -131,7 +133,7 @@ async function planRemoteKnowledgeQueries({ aiService, stage, context, signal } 
     const queries = normalizePlannedQueries(planned);
     if (queries.length) return { queries, source: 'ai' };
   } catch (error) {
-    if (signal?.aborted || error?.name === 'AbortError' || error?.code === 'ABORT_ERR') throw error;
+    if (signal?.aborted || error?.name === 'AbortError' || error?.code === 'ABORT_ERR' || error?.code === AI_QUEUE_SCOPE_PAUSED) throw error;
   }
   return { queries: buildFallbackQueries(stage, context), source: 'fallback' };
 }

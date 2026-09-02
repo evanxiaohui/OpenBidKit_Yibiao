@@ -80,6 +80,17 @@ test('falls back when AI planning fails or returns no valid query', async () => 
   assert.ok(result.queries.some((query) => /质量保证措施/.test(query)));
 });
 
+test('rethrows queue-scope pause errors instead of falling back to remote retrieval', async () => {
+  const error = new Error('AI 请求队列已暂停');
+  error.code = 'AI_QUEUE_SCOPE_PAUSED';
+  await assert.rejects(() => planRemoteKnowledgeQueries({
+    aiService: { collectJsonResponse: async () => { throw error; } },
+    stage: 'content-planning',
+    context: { chapter: { title: '质量保证措施', description: '验收与整改安排' } },
+    signal: new AbortController().signal,
+  }), (actual) => actual === error);
+});
+
 test('rethrows cancellation errors from AI planning', async () => {
   const controller = new AbortController();
   controller.abort();

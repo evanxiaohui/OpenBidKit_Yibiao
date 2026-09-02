@@ -147,6 +147,7 @@ test('并发正文编排按小节规划多查询且仅使用当前小节的远�
       project_overview: '智慧水务',
       outline: sectionIds.map((id) => ({ id, title: `章节-${id}`, description: `目标-${id}`, content_mode: 'ai-generate' })),
     },
+    techRequirements: '招标技术要求正文',
     globalFacts: [{ title: '工期', content: '180 日历天' }],
     globalFactsTask: { status: 'success' },
     contentGenerationOptions: {
@@ -157,6 +158,7 @@ test('并发正文编排按小节规划多查询且仅使用当前小节的远�
     contentGenerationPlans: {},
   };
   const plannerPrompts = new Map();
+  const plannerRequests = new Map();
   const generationPrompts = new Map();
   const remoteSearchRequests = [];
   let concurrentPlannerCount = 0;
@@ -179,11 +181,12 @@ test('并发正文编排按小节规划多查询且仅使用当前小节的远�
   const getContentPlanningSectionId = (messages) => messages.map((message) => message.content).join('\n').match(/章节ID:\s*(s[1-3])/)?.[1];
   const aiService = {
     getConfig: () => ({ concurrency_limit: 2 }),
-    collectJsonResponse: async ({ messages, logTitle, normalizer }) => {
+    collectJsonResponse: async ({ messages, logTitle, normalizer, signal }) => {
       const prompt = messages.map((message) => message.content).join('\n');
       if (logTitle === '远程知识查询规划-content-planning') {
         const sectionId = sectionIds.find((id) => prompt.includes(`章节-${id}`));
         assert.ok(sectionId);
+        plannerRequests.set(sectionId, { messages, signal });
         return normalizer({
           queries: [`章节-${sectionId}实施方法？`, `章节-${sectionId}如何验收？`],
         });
@@ -218,10 +221,11 @@ test('并发正文编排按小节规划多查询且仅使用当前小节的远�
     }],
   };
   const knowledgeSession = {
-    searchRemote: async ({ queries }) => {
+    searchRemote: async (request) => {
+      const { queries } = request;
       const queryText = queries.join('\n');
       const sectionId = sectionIds.find((id) => queryText.includes(`章节-${id}`));
-      remoteSearchRequests.push({ queries, sectionId });
+      remoteSearchRequests.push({ request, sectionId });
       return sectionId ? [remoteReferences[sectionId]] : [];
     },
   };
@@ -242,8 +246,28 @@ test('并发正文编排按小节规划多查询且仅使用当前小节的远�
 
   assert.equal(remoteSearchRequests.length, sectionIds.length);
   for (const sectionId of sectionIds) {
-    const request = remoteSearchRequests.find((candidate) => candidate.sectionId === sectionId);
-    assert.deepEqual(request?.queries, [`章节-${sectionId}实施方法？`, `章节-${sectionId}如何验收？`]);
+    const plannerRequest = plannerRequests.get(sectionId);
+    assert.equal(plannerRequest?.signal, taskControl.signal);
+    const planningPrompt = plannerRequest?.messages.map((message) => message.content).join('\n') || '';
+    const planningContext = JSON.parse(planningPrompt.split('以下是完整项目上下文，请据此规划短查询：\n')[1]);
+    assert.deepEqual(planningContext.chapter, {
+      id: sectionId,
+      title: `章节-${sectionId}`,
+      description: `目标-${sectionId}`,
+      content_mode: 'ai-generate',
+    });
+    assert.equal(planningContext.projectOverview, '智慧水务');
+    assert.equal(planningContext.bidAnalysisFactsText, '');
+    assert.equal(planningContext.globalFactTitlesText, '[\n  "工期"\n]');
+    assert.equal(planningContext.technicalRequirements, '招标技术要求正文');
+    const search = remoteSearchRequests.find((candidate) => candidate.sectionId === sectionId);
+    assert.ok(search);
+    assert.deepEqual(Object.keys(search.request).sort(), ['matchCount', 'queries', 'stage']);
+    assert.deepEqual(search.request, {
+      stage: 'content-planning',
+      queries: [`章节-${sectionId}实施方法？`, `章节-${sectionId}如何验收？`],
+      matchCount: 8,
+    });
     const prompt = plannerPrompts.get(sectionId) || '';
     assert.match(prompt, /local-doc::local-item/);
     assert.match(prompt, new RegExp(remoteReferences[sectionId].id));
