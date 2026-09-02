@@ -12,7 +12,7 @@ import { DEFAULT_EXPORT_FORMAT } from '../../../shared/types/exportFormat';
 import { formatOutlineTitle } from '../../../shared/utils/outlineNumbering';
 import OutlineSelectionDialog from '../components/OutlineSelectionDialog';
 import RemoteKnowledgePicker from '../components/RemoteKnowledgePicker';
-import { isRemoteScopeStale } from '../remoteKnowledgeSelection';
+import { formatKnowledgeReferenceSummary, isRemoteScopeStale } from '../remoteKnowledgeSelection';
 
 interface OutlineEditPageProps {
   workflowKind: TechnicalPlanWorkflowKind;
@@ -582,7 +582,7 @@ function OutlineEditPage({
     if (!draftRemoteKnowledgeScopes.length) return true;
     const fingerprint = await window.yibiao?.remoteKnowledge.getEndpointFingerprint() || '';
     if (draftRemoteKnowledgeScopes.some((scope) => isRemoteScopeStale(scope, fingerprint))) {
-      showToast('远程知识选择已过期，请切换到远程知识并重新选择', 'info');
+      showToast('远程知识库选择已过期，请切换到远程知识库并重新选择', 'info');
       return false;
     }
     return true;
@@ -1263,7 +1263,7 @@ function OutlineEditPage({
         <div>
           <span className="section-kicker">STEP 03</span>
           <strong>目录生成</strong>
-          <p>{isExpansionWorkflow ? `当前原方案目录使用方式：${outlineExpansionModeLabels[outlineExpansionMode]}；参考知识库：${referenceKnowledgeDocumentIds.length ? `已选择 ${referenceKnowledgeDocumentIds.length} 个文档` : '未选择'}。` : `${outlineMode === 'standalone-technical' ? '技术评分大项直接作为一级目录' : '一级目录依据完整响应文件要求生成'}；参考知识库：${referenceKnowledgeDocumentIds.length ? `已选择 ${referenceKnowledgeDocumentIds.length} 个文档` : '未选择'}。`}</p>
+          <p>{isExpansionWorkflow ? `当前原方案目录使用方式：${outlineExpansionModeLabels[outlineExpansionMode]}；参考知识库：${formatKnowledgeReferenceSummary(referenceKnowledgeDocumentIds.length, remoteKnowledgeScopes)}。` : `${outlineMode === 'standalone-technical' ? '技术评分大项直接作为一级目录' : '一级目录依据完整响应文件要求生成'}；参考知识库：${formatKnowledgeReferenceSummary(referenceKnowledgeDocumentIds.length, remoteKnowledgeScopes)}。`}</p>
         </div>
         <div className="outline-command-actions">
           {awaitingOutlineSelection && (
@@ -1543,7 +1543,7 @@ function OutlineEditPage({
                   <strong>参考知识库</strong>
                   <span>本地 {draftKnowledgeDocumentIds.length} 个文档，远程 {draftRemoteKnowledgeScopes.filter((scope) => scope.mode === 'all').length} 个库 / {draftRemoteKnowledgeScopes.reduce((sum, scope) => sum + (scope.mode === 'documents' ? scope.documents.length : 0), 0)} 个文档</span>
                 </div>
-                <div className="outline-knowledge-tabs"><button type="button" className={knowledgeTab === 'local' ? 'is-active' : ''} onClick={() => setKnowledgeTab('local')}>本地知识</button><button type="button" className={knowledgeTab === 'remote' ? 'is-active' : ''} onClick={() => setKnowledgeTab('remote')}>远程知识</button></div>
+                <div className="outline-knowledge-tabs"><button type="button" className={knowledgeTab === 'local' ? 'is-active' : ''} onClick={() => setKnowledgeTab('local')}>本地知识库</button><button type="button" className={knowledgeTab === 'remote' ? 'is-active' : ''} onClick={() => setKnowledgeTab('remote')}>远程知识库</button></div>
                 {knowledgeTab === 'local' ? renderKnowledgePicker() : <RemoteKnowledgePicker scopes={draftRemoteKnowledgeScopes} disabled={knowledgePickingDisabled} onChange={setDraftRemoteKnowledgeScopes} />}
                 {renderCombinedKnowledgeSelection()}
               </section>

@@ -15,7 +15,7 @@ const settingsTabs: Array<{ id: SettingsTab; label: string }> = [
   { id: 'general', label: '通用' },
   { id: 'text-model', label: '文本模型' },
   { id: 'image-model', label: '生图模型' },
-  { id: 'remote-knowledge', label: '远程知识' },
+  { id: 'remote-knowledge', label: '远程知识库' },
   { id: 'components', label: '组件设置' },
   { id: 'agent', label: '智能体配置' },
   { id: 'about', label: '关于' },
@@ -978,15 +978,15 @@ function SettingsPage({ onDeveloperModeChange }: SettingsPageProps) {
     };
 
     if (!draft.base_url) {
-      showToast('请填写远程知识服务地址', 'info');
+      showToast('请填写远程知识库服务地址', 'info');
       return;
     }
     if (!/^https?:\/\//i.test(draft.base_url)) {
-      showToast('远程知识服务地址必须以 http:// 或 https:// 开头', 'info');
+      showToast('远程知识库服务地址必须以 http:// 或 https:// 开头', 'info');
       return;
     }
     if (!draft.api_key) {
-      showToast('请填写远程知识 API Key', 'info');
+      showToast('请填写远程知识库 API Key', 'info');
       return;
     }
 
@@ -2248,7 +2248,7 @@ function SettingsPage({ onDeveloperModeChange }: SettingsPageProps) {
       {activeTab === 'remote-knowledge' && (
         <section className="settings-page-section remote-knowledge-section">
           <div className="remote-knowledge-intro">
-            <span className="section-kicker">远程知识</span>
+            <span className="section-kicker">远程知识库</span>
             <strong>连接远程知识库</strong>
             <p>当前接入协议为 WeKnora v0.7.2 或以上版本。API Key 的知识库权限由远程服务管理端控制。</p>
           </div>
@@ -2268,12 +2268,12 @@ function SettingsPage({ onDeveloperModeChange }: SettingsPageProps) {
             <label className="settings-row">
               <div className="settings-row-copy">
                 <strong>API Key</strong>
-                <span>用于访问远程知识服务，仅保存在本机配置中</span>
+                <span>用于访问远程知识库服务，仅保存在本机配置中</span>
               </div>
               <input
                 type="password"
                 value={state.remoteKnowledge.api_key}
-                placeholder="请输入远程知识 API Key"
+                placeholder="请输入远程知识库 API Key"
                 autoComplete="off"
                 onChange={(event) => updateRemoteKnowledgeConfig({ api_key: event.target.value })}
               />
@@ -2654,9 +2654,9 @@ function SettingsPage({ onDeveloperModeChange }: SettingsPageProps) {
       <AppDialog
         open={restoreRemoteKnowledgeDialogOpen}
         onOpenChange={setRestoreRemoteKnowledgeDialogOpen}
-        kicker="远程知识"
-        title="恢复默认远程知识配置？"
-        description="将用随应用提供的服务地址和 API Key 覆盖当前未保存的远程知识配置；恢复后仍需点击“保存配置”才会生效。"
+        kicker="远程知识库"
+        title="恢复默认远程知识库配置？"
+        description="将用随应用提供的服务地址和 API Key 覆盖当前未保存的远程知识库配置；恢复后仍需点击“保存配置”才会生效。"
         actions={(
           <>
             <button type="button" className="secondary-action" onClick={() => setRestoreRemoteKnowledgeDialogOpen(false)}>取消</button>

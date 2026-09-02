@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   clearRemoteSelections,
   beginRemoteDocumentSelection,
+  formatKnowledgeReferenceSummary,
   isRemoteDocumentSelectionDisabled,
   isRemoteScopeStale,
   selectRemoteDocuments,
@@ -75,4 +76,12 @@ test('beginning document selection cancels only the active whole-library scope f
   ], 'kb-1');
 
   assert.deepEqual(next, [scope('kb-2', 'documents', ['doc-2'])]);
+});
+
+test('reference summary separates local documents, whole remote knowledge bases, and remote documents', () => {
+  assert.equal(
+    formatKnowledgeReferenceSummary(2, [scope('kb-1', 'all'), scope('kb-2', 'documents', ['doc-1', 'doc-2', 'doc-3'])]),
+    '本地 2 个文档，远程 1 个完整知识库，远程 3 个指定文档',
+  );
+  assert.equal(formatKnowledgeReferenceSummary(0, []), '未选择');
 });

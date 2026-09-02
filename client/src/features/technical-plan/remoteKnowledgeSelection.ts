@@ -13,6 +13,22 @@ export function isRemoteDocumentSelectionDisabled(scope: RemoteKnowledgeScope | 
   return disabled || scope?.mode === 'all';
 }
 
+export function formatKnowledgeReferenceSummary(localDocumentCount: number, remoteScopes: RemoteKnowledgeScope[]): string {
+  const parts: string[] = [];
+  if (localDocumentCount > 0) parts.push(`本地 ${localDocumentCount} 个文档`);
+
+  const wholeLibraryCount = remoteScopes.filter((scope) => scope.mode === 'all').length;
+  if (wholeLibraryCount > 0) parts.push(`远程 ${wholeLibraryCount} 个完整知识库`);
+
+  const remoteDocumentCount = remoteScopes.reduce(
+    (count, scope) => count + (scope.mode === 'documents' ? scope.documents.length : 0),
+    0,
+  );
+  if (remoteDocumentCount > 0) parts.push(`远程 ${remoteDocumentCount} 个指定文档`);
+
+  return parts.join('，') || '未选择';
+}
+
 export function beginRemoteDocumentSelection(scopes: RemoteKnowledgeScope[], knowledgeBaseId: string): RemoteKnowledgeScope[] {
   return scopes.filter((scope) => scope.knowledgeBaseId !== knowledgeBaseId || scope.mode !== 'all');
 }

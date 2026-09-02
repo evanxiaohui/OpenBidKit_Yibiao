@@ -41,32 +41,58 @@ export default function RemoteKnowledgePicker({ scopes, disabled = false, onChan
       if (result) { setDocuments((prev) => ({ ...prev, [baseId]: result })); setPage((prev) => ({ ...prev, [baseId]: nextPage })); }
     } catch (e) { setError(e instanceof Error ? e.message : '读取远程文档失败'); setRetry(() => () => void loadDocuments(baseId, nextPage)); }
   };
-  return <div className="remote-knowledge-picker">
-    {error && <div className="outline-knowledge-error">{error}<button type="button" onClick={() => { const action = retry || (() => void loadBases()); setError(''); action(); }}>重试</button></div>}
-    {loading && <div className="outline-knowledge-empty">正在读取远程知识库...</div>}
-    {!loading && !error && !bases.length && <div className="outline-knowledge-empty">暂无可用远程知识库</div>}
-    {bases.map((base) => {
-      const current = scopes.find((scope) => scope.knowledgeBaseId === base.id);
-      const docs = documents[base.id];
-      const stale = current && isRemoteScopeStale(current, endpointFingerprint);
-      return <section className="remote-knowledge-base" key={base.id}>
-        <div className="remote-knowledge-base-head"><strong>{base.name}</strong><div>
-          <button type="button" disabled={disabled} onClick={() => onChange(selectWholeKnowledgeBase(scopes, base, endpointFingerprint))}>{current?.mode === 'all' ? '已选整个知识库' : '选择整个知识库'}</button>
-          <button type="button" disabled={disabled} onClick={() => {
-            if (current?.mode === 'all') onChange(beginRemoteDocumentSelection(scopes, base.id));
-            void loadDocuments(base.id, 1);
-          }}>{current?.mode === 'all' ? '改选文档' : '查看文档'}</button>
-        </div></div>
-        {stale && <small className="outline-knowledge-stale">连接配置已变化，请重新选择</small>}
-        {docs && <div className="remote-knowledge-documents">{docs.items.map((doc) => <label key={doc.id}>
-          <input type="checkbox" disabled={isRemoteDocumentSelectionDisabled(current, disabled)} checked={current?.mode === 'documents' && current.documents.some((item) => item.knowledgeId === doc.id)} onChange={() => {
-            const selected = current?.mode === 'documents' ? current.documents : [];
-            const selectedInBase = current?.mode === 'documents' && current.documents.some((item) => item.knowledgeId === doc.id);
-            const next = selectedInBase ? selected.filter((item) => item.knowledgeId !== doc.id) : [...selected, { knowledgeId: doc.id, title: doc.title }];
-            onChange(selectRemoteDocuments(scopes, base, next, endpointFingerprint));
-          }} />{doc.title}
-        </label>)}<div><button type="button" disabled={docs.page <= 1} onClick={() => void loadDocuments(base.id, docs.page - 1)}>上一页</button><span>{docs.page}/{Math.max(1, Math.ceil(docs.total / docs.pageSize))}</span><button type="button" disabled={docs.page * docs.pageSize >= docs.total} onClick={() => void loadDocuments(base.id, docs.page + 1)}>下一页</button></div></div>}
-      </section>;
-    })}
+  return <div className="remote-knowledge-picker outline-knowledge-browser">
+    <div className="outline-knowledge-pane-head remote-knowledge-pane-head">
+      <strong>远程知识库</strong>
+      <span>有 {bases.length} 个知识库</span>
+    </div>
+    {error && <div className="outline-knowledge-error">{error}<button className="remote-knowledge-action" type="button" onClick={() => { const action = retry || (() => void loadBases()); setError(''); action(); }}>重试</button></div>}
+    {loading && <div className="outline-knowledge-empty compact">正在读取远程知识库...</div>}
+    {!loading && !error && !bases.length && <div className="outline-knowledge-empty compact">暂无可用远程知识库</div>}
+    {!!bases.length && <div className="remote-knowledge-base-list">
+      {bases.map((base) => {
+        const current = scopes.find((scope) => scope.knowledgeBaseId === base.id);
+        const docs = documents[base.id];
+        const stale = current && isRemoteScopeStale(current, endpointFingerprint);
+        return <section className="remote-knowledge-base" key={base.id}>
+          <div className="remote-knowledge-base-head">
+            <div className="remote-knowledge-base-title">
+              <strong title={base.name}>{base.name}</strong>
+              {current?.mode === 'all' && <span className="remote-knowledge-selection-state">已选整个库</span>}
+              {current?.mode === 'documents' && <span className="remote-knowledge-selection-state">已选 {current.documents.length} 个文档</span>}
+            </div>
+            <div className="remote-knowledge-base-actions">
+              <button className={`remote-knowledge-action${current?.mode === 'all' ? ' is-selected' : ''}`} type="button" disabled={disabled} onClick={() => onChange(selectWholeKnowledgeBase(scopes, base, endpointFingerprint))}>{current?.mode === 'all' ? '已选整个知识库' : '选择整个知识库'}</button>
+              <button className="remote-knowledge-action" type="button" disabled={disabled} onClick={() => {
+                if (current?.mode === 'all') onChange(beginRemoteDocumentSelection(scopes, base.id));
+                void loadDocuments(base.id, 1);
+              }}>{current?.mode === 'all' ? '改选文档' : '查看文档'}</button>
+            </div>
+          </div>
+          {stale && <small className="outline-knowledge-stale">连接配置已变化，请重新选择</small>}
+          {docs && <div className="remote-knowledge-documents">
+            <div className="outline-knowledge-document-list compact">
+              {docs.items.map((doc) => {
+                const documentSelected = current?.mode === 'documents' && current.documents.some((item) => item.knowledgeId === doc.id);
+                const documentDisabled = isRemoteDocumentSelectionDisabled(current, disabled);
+                return <label className={`outline-knowledge-document compact remote-knowledge-document${documentSelected ? ' is-selected' : ''}${documentDisabled ? ' is-disabled' : ''}`} key={doc.id}>
+                  <input type="checkbox" disabled={documentDisabled} checked={documentSelected} onChange={() => {
+                    const selected = current?.mode === 'documents' ? current.documents : [];
+                    const next = documentSelected ? selected.filter((item) => item.knowledgeId !== doc.id) : [...selected, { knowledgeId: doc.id, title: doc.title }];
+                    onChange(selectRemoteDocuments(scopes, base, next, endpointFingerprint));
+                  }} />
+                  <span><strong title={doc.title}>{doc.title}</strong></span>
+                </label>;
+              })}
+            </div>
+            <div className="remote-knowledge-pagination">
+              <button className="remote-knowledge-action" type="button" disabled={docs.page <= 1} onClick={() => void loadDocuments(base.id, docs.page - 1)}>上一页</button>
+              <span>{docs.page}/{Math.max(1, Math.ceil(docs.total / docs.pageSize))}</span>
+              <button className="remote-knowledge-action" type="button" disabled={docs.page * docs.pageSize >= docs.total} onClick={() => void loadDocuments(base.id, docs.page + 1)}>下一页</button>
+            </div>
+          </div>}
+        </section>;
+      })}
+    </div>}
   </div>;
 }
