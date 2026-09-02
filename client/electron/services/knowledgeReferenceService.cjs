@@ -56,8 +56,15 @@ function createKnowledgeReferenceService({ knowledgeBaseService, remoteKnowledge
       return error;
     }
 
-    session.searchRemote = async ({ stage, query, matchCount = DEFAULT_MATCH_COUNT } = {}) => {
-      if (session.remoteDisabledForRun || !remoteKnowledgeService || typeof remoteKnowledgeService.search !== 'function') return [];
+    session.searchRemote = async ({ stage, queries, query, matchCount = DEFAULT_MATCH_COUNT } = {}) => {
+      const normalizedQueries = (Array.isArray(queries) ? queries : [])
+        .map((value) => String(value || '').trim())
+        .filter(Boolean);
+      if (!normalizedQueries.length) {
+        const legacyQuery = String(query || '').trim();
+        if (legacyQuery) normalizedQueries.push(legacyQuery);
+      }
+      if (!normalizedQueries.length || session.remoteDisabledForRun || !remoteKnowledgeService || typeof remoteKnowledgeService.searchMany !== 'function') return [];
       const limit = normalizeCount(matchCount);
       let joinedDecisionWait = false;
       const joinDecisionWait = () => {
@@ -79,7 +86,7 @@ function createKnowledgeReferenceService({ knowledgeBaseService, remoteKnowledge
           try {
             const compatibilityError = getScopeCompatibilityError();
             if (compatibilityError) throw compatibilityError;
-            const found = await remoteKnowledgeService.search({ query, scopes: session.remoteScopes, matchCount: limit, signal: session.signal });
+            const found = await remoteKnowledgeService.searchMany({ queries: normalizedQueries, scopes: session.remoteScopes, matchCount: limit, signal: session.signal });
             const unique = new Map();
             for (const item of (Array.isArray(found) ? found : [])) {
               const key = remoteKey(item);
@@ -111,12 +118,12 @@ function createKnowledgeReferenceService({ knowledgeBaseService, remoteKnowledge
 
     session.disableRemote = () => { session.remoteDisabledForRun = true; };
     session.isRemoteDisabled = () => session.remoteDisabledForRun;
-    session.loadReferences = async ({ stage, query, matchCount = DEFAULT_MATCH_COUNT } = {}) => {
+    session.loadReferences = async ({ stage, queries, query, matchCount = DEFAULT_MATCH_COUNT } = {}) => {
       const limit = normalizeCount(matchCount);
       const allLocal = await session.loadLocalReferences();
       const local = allLocal.slice(0, limit);
       const remaining = Math.max(0, limit - local.length);
-      const remote = remaining > 0 ? await session.searchRemote({ stage, query, matchCount: remaining }) : [];
+      const remote = remaining > 0 ? await session.searchRemote({ stage, queries, query, matchCount: remaining }) : [];
       return { local, remote: remote.slice(0, remaining), references: [...local, ...remote].slice(0, limit) };
     };
     session.dispose = () => {
