@@ -171,6 +171,21 @@ function rankQueryCandidates(items) {
   return [...unique.values()].slice(0, QUERY_CANDIDATE_LIMIT);
 }
 
+function calculateRrfScore(ranks) {
+  return ranks.reduce((total, rank) => total + 1 / (RRF_K + rank), 0);
+}
+
+function compareFusedSearchEntries(left, right) {
+  return right.rrfScore - left.rrfScore
+    || right.queryIndexes.size - left.queryIndexes.size
+    || right.bestScore - left.bestScore
+    || left.firstSeen - right.firstSeen;
+}
+
+function orderFusedSearchEntries(entries) {
+  return entries.slice().sort(compareFusedSearchEntries);
+}
+
 function fuseSearchResults(queryCandidates, resultLimit) {
   const unique = new Map();
   for (const [queryIndex, candidates] of queryCandidates.entries()) {
@@ -184,7 +199,7 @@ function fuseSearchResults(queryCandidates, resultLimit) {
         bestScore: item.score,
         firstSeen: encounterIndex,
       };
-      entry.rrfScore += 1 / (RRF_K + index + 1);
+      entry.rrfScore += calculateRrfScore([index + 1]);
       entry.queryIndexes.add(queryIndex);
       entry.bestScore = Math.max(entry.bestScore, item.score);
       entry.firstSeen = Math.min(entry.firstSeen, encounterIndex);
@@ -206,12 +221,7 @@ function fuseSearchResults(queryCandidates, resultLimit) {
 
   const remaining = [...unique.entries()]
     .filter(([key]) => !selectedKeys.has(key))
-    .sort(([, left], [, right]) => (
-      right.rrfScore - left.rrfScore
-      || right.queryIndexes.size - left.queryIndexes.size
-      || right.bestScore - left.bestScore
-      || left.firstSeen - right.firstSeen
-    ));
+    .sort(([, left], [, right]) => compareFusedSearchEntries(left, right));
   for (const [key, entry] of remaining) {
     selected.push(entry);
     selectedKeys.add(key);
@@ -318,6 +328,8 @@ function createRemoteKnowledgeService({ config, fetchImpl, timeoutMs, retryDelay
 }
 
 module.exports = {
+  calculateRrfScore,
   createRemoteKnowledgeService,
   mapSearchResult,
+  orderFusedSearchEntries,
 };

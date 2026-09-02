@@ -1,7 +1,32 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 
-const { createRemoteKnowledgeService } = require('./remoteKnowledgeService.cjs');
+const {
+  createRemoteKnowledgeService,
+  calculateRrfScore,
+  orderFusedSearchEntries,
+} = require('./remoteKnowledgeService.cjs');
+
+function fusedEntry({ key, rrfScore, queryCount, bestScore, firstSeen }) {
+  const [knowledgeBaseId, knowledgeId, chunkId] = key.split(':');
+  return {
+    key,
+    item: {
+      id: `remote:${key}`,
+      origin: 'remote',
+      knowledgeBaseId,
+      knowledgeId,
+      chunkId,
+      title: chunkId,
+      content: chunkId,
+      score: bestScore,
+    },
+    rrfScore,
+    queryIndexes: new Set(Array.from({ length: queryCount }, (_value, index) => index)),
+    bestScore,
+    firstSeen,
+  };
+}
 
 function jsonResponse(payload, status = 200) {
   return {
@@ -18,6 +43,34 @@ function createServiceWithFetch(fetchImpl) {
     retryDelays: [0, 0],
   });
 }
+
+test('locks RRF scoring to one-based ranks with RRF_K 60', () => {
+  assert.equal(calculateRrfScore([1, 4]), 1 / (60 + 1) + 1 / (60 + 4));
+});
+
+test('orders equal-RRF entries by query coverage', () => {
+  const entries = [
+    fusedEntry({ key: 'kb:doc:one', rrfScore: 0.5, queryCount: 1, bestScore: 0.8, firstSeen: 0 }),
+    fusedEntry({ key: 'kb:doc:two', rrfScore: 0.5, queryCount: 2, bestScore: 0.8, firstSeen: 1 }),
+  ];
+  assert.deepEqual(orderFusedSearchEntries(entries).map((entry) => entry.item.chunkId), ['two', 'one']);
+});
+
+test('orders equal-RRF and coverage entries by best original score', () => {
+  const entries = [
+    fusedEntry({ key: 'kb:doc:one', rrfScore: 0.5, queryCount: 2, bestScore: 0.8, firstSeen: 0 }),
+    fusedEntry({ key: 'kb:doc:two', rrfScore: 0.5, queryCount: 2, bestScore: 0.9, firstSeen: 1 }),
+  ];
+  assert.deepEqual(orderFusedSearchEntries(entries).map((entry) => entry.item.chunkId), ['two', 'one']);
+});
+
+test('orders equal-RRF, coverage, and best score by first seen encounter', () => {
+  const entries = [
+    fusedEntry({ key: 'kb:doc:one', rrfScore: 0.5, queryCount: 2, bestScore: 0.8, firstSeen: 3 }),
+    fusedEntry({ key: 'kb:doc:two', rrfScore: 0.5, queryCount: 2, bestScore: 0.8, firstSeen: 1 }),
+  ];
+  assert.deepEqual(orderFusedSearchEntries(entries).map((entry) => entry.item.chunkId), ['two', 'one']);
+});
 
 test('maps remote knowledge bases and documents to generic remote knowledge models', async () => {
   const service = createServiceWithFetch(async (url) => {
