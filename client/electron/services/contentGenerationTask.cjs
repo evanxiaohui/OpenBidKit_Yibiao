@@ -19,6 +19,7 @@ const {
 const { applyRangeEdits, findTextMatches } = require('../utils/textEdit.cjs');
 const { splitUserTextByContextLimit } = require('../utils/userTextSplitter.cjs');
 const { countReadableWords } = require('../utils/wordCount.cjs');
+const { planRemoteKnowledgeQueries } = require('./remoteKnowledgeQueryPlanner.cjs');
 
 const DEFAULT_CONTEXT_LENGTH_LIMIT = 400000;
 const AGENT_CONTEXT_THRESHOLD_RATIO = 0.7;
@@ -2579,18 +2580,6 @@ function namespaceRemoteKnowledgeItem(item) {
   };
 }
 
-function buildContentPlanningRetrievalQuery({ chapter, projectOverview, bidAnalysisFactsText, globalFactTitlesText, techRequirements } = {}) {
-  return [
-    chapter?.title ? `章节：${singleLine(chapter.title)}` : '',
-    (chapter?.objective || chapter?.description) ? `目标：${singleLine(chapter.objective || chapter.description)}` : '',
-    chapter?.requirements ? `相关要求：${singleLine(chapter.requirements)}` : '',
-    projectOverview ? `项目概述：${singleLine(projectOverview)}` : '',
-    bidAnalysisFactsText ? `已确认事实：${singleLine(bidAnalysisFactsText)}` : '',
-    globalFactTitlesText ? `已确认事实变量：${singleLine(globalFactTitlesText)}` : '',
-    techRequirements ? `招标要求：${singleLine(techRequirements)}` : '',
-  ].filter(Boolean).join('\n');
-}
-
 function normalizeRemoteKnowledgeReferencesBySection(value) {
   const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
   const result = {};
@@ -3962,22 +3951,30 @@ async function runContentGenerationTask({ aiService, agentService, workspaceStor
 
   async function retrieveRemoteKnowledgeForPlanning(context) {
     if (!knowledgeSession?.searchRemote) return [];
-    const query = buildContentPlanningRetrievalQuery({
-      chapter: context.item,
-      projectOverview,
-      bidAnalysisFactsText,
-      globalFactTitlesText,
-      techRequirements,
-    });
-    if (!query) return [];
     try {
-      const found = await knowledgeSession.searchRemote({ stage: 'content-planning', query, matchCount: 8 });
+      const queryPlan = await planRemoteKnowledgeQueries({
+        aiService,
+        stage: 'content-planning',
+        context: {
+          chapter: context.item,
+          projectOverview,
+          bidAnalysisFactsText,
+          globalFactTitlesText,
+          technicalRequirements: techRequirements,
+        },
+        signal: taskControl?.signal,
+      });
+      const found = await knowledgeSession.searchRemote({
+        stage: 'content-planning',
+        queries: queryPlan.queries,
+        matchCount: 8,
+      });
       const references = (Array.isArray(found) ? found : [])
         .map(namespaceRemoteKnowledgeItem)
         .filter((item) => item.content && item.knowledgeBaseId && item.knowledgeId && item.chunkId);
       return references;
     } catch (error) {
-      if (isPauseLikeError(error)) throw error;
+      if (taskControl?.signal?.aborted || error?.name === 'AbortError' || error?.code === 'ABORT_ERR' || isPauseLikeError(error)) throw error;
       logs = [...logs, `远程知识检索失败，正文编排继续使用本地材料：${error.message || String(error)}`];
       return [];
     }
@@ -6875,7 +6872,6 @@ const __developerContentExpansionPatchRuntime = {
 module.exports = {
   runContentGenerationTask,
   stripRepeatedChapterTitle,
-  buildContentPlanningRetrievalQuery,
   normalizeContentGenerationRuntime,
   namespaceRemoteKnowledgeItem,
   resolveRemoteKnowledgeContents,

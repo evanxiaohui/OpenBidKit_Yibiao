@@ -2,7 +2,6 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 
 const {
-  buildContentPlanningRetrievalQuery,
   normalizeContentGenerationRuntime,
   namespaceRemoteKnowledgeItem,
   resolveRemoteKnowledgeContents,
@@ -10,19 +9,6 @@ const {
   shouldRetainContentGenerationRuntime,
   runContentGenerationTask,
 } = require('./contentGenerationTask.cjs');
-
-test('正文编排远程检索查询包含章节目标、已确认事实和招标要求', () => {
-  const query = buildContentPlanningRetrievalQuery({
-    chapter: { title: '质量保证措施', description: '验收与整改安排' },
-    projectOverview: '智慧水务平台建设',
-    bidAnalysisFactsText: '工期 180 日历天',
-    techRequirements: '要求提供质量管理体系和验收标准',
-  });
-  assert.match(query, /质量保证措施/);
-  assert.match(query, /验收与整改安排/);
-  assert.match(query, /工期 180/);
-  assert.match(query, /验收标准/);
-});
 
 test('远程条目使用稳定命名空间并可从 runtime 快照恢复正文素材', () => {
   const item = namespaceRemoteKnowledgeItem({
@@ -110,9 +96,13 @@ test('失败章节重试保留锁定远程片段且不发起第二次检索', as
     state.contentGenerationTask = { ...(state.contentGenerationTask || {}), ...taskPatch };
     return { task: state.contentGenerationTask };
   };
+  let queryPlanningCalls = 0;
   const aiService = {
     getConfig: () => ({ concurrency_limit: 1 }),
-    collectJsonResponse: async () => { throw new Error('重试不应重新编排'); },
+    collectJsonResponse: async () => {
+      queryPlanningCalls += 1;
+      throw new Error('重试不应重新编排');
+    },
     chat: async ({ messages }) => {
       chatMessages.push(messages);
       if (failFirstRetry) {
@@ -135,10 +125,11 @@ test('失败章节重试保留锁定远程片段且不发起第二次检索', as
   await runContentGenerationTask({ ...sharedInput, payload: { retryFailedSections: true } });
 
   assert.equal(searches.length, 0);
+  assert.equal(queryPlanningCalls, 0);
   assert.match(chatMessages.at(-1).map((message) => message.content).join('\n'), /锁定远程质量控制片段/);
 });
 
-test('并发正文编排和生成仅使用当前小节的远程候选与锁定快照', async () => {
+test('并发正文编排按小节规划多查询且仅使用当前小节的远程候选与锁定快照', async () => {
   const sectionIds = ['s1', 's2', 's3'];
   const remoteReferences = Object.fromEntries(sectionIds.map((sectionId, index) => [sectionId, {
     id: `remote:kb-1:doc-${sectionId}:chunk-${sectionId}`,
@@ -167,6 +158,7 @@ test('并发正文编排和生成仅使用当前小节的远程候选与锁定�
   };
   const plannerPrompts = new Map();
   const generationPrompts = new Map();
+  const remoteSearchRequests = [];
   let concurrentPlannerCount = 0;
   let releaseConcurrentPlanners;
   const concurrentPlannersReady = new Promise((resolve) => { releaseConcurrentPlanners = resolve; });
@@ -184,12 +176,19 @@ test('并发正文编排和生成仅使用当前小节的远程候选与锁定�
     state.contentGenerationTask = { ...(state.contentGenerationTask || {}), ...taskPatch };
     return { task: state.contentGenerationTask };
   };
-  const getSectionId = (messages) => messages.map((message) => message.content).join('\n').match(/章节ID:\s*(s[1-3])/)?.[1];
+  const getContentPlanningSectionId = (messages) => messages.map((message) => message.content).join('\n').match(/章节ID:\s*(s[1-3])/)?.[1];
   const aiService = {
     getConfig: () => ({ concurrency_limit: 2 }),
-    collectJsonResponse: async ({ messages, normalizer }) => {
+    collectJsonResponse: async ({ messages, logTitle, normalizer }) => {
       const prompt = messages.map((message) => message.content).join('\n');
-      const sectionId = getSectionId(messages);
+      if (logTitle === '远程知识查询规划-content-planning') {
+        const sectionId = sectionIds.find((id) => prompt.includes(`章节-${id}`));
+        assert.ok(sectionId);
+        return normalizer({
+          queries: [`章节-${sectionId}实施方法？`, `章节-${sectionId}如何验收？`],
+        });
+      }
+      const sectionId = getContentPlanningSectionId(messages);
       assert.ok(sectionId);
       plannerPrompts.set(sectionId, prompt);
       if (sectionId !== 's1') {
@@ -219,8 +218,10 @@ test('并发正文编排和生成仅使用当前小节的远程候选与锁定�
     }],
   };
   const knowledgeSession = {
-    searchRemote: async ({ query }) => {
-      const sectionId = sectionIds.find((id) => query.includes(`章节-${id}`));
+    searchRemote: async ({ queries }) => {
+      const queryText = queries.join('\n');
+      const sectionId = sectionIds.find((id) => queryText.includes(`章节-${id}`));
+      remoteSearchRequests.push({ queries, sectionId });
       return sectionId ? [remoteReferences[sectionId]] : [];
     },
   };
@@ -239,7 +240,10 @@ test('并发正文编排和生成仅使用当前小节的远程候选与锁定�
     previousState: structuredClone(state),
   });
 
+  assert.equal(remoteSearchRequests.length, sectionIds.length);
   for (const sectionId of sectionIds) {
+    const request = remoteSearchRequests.find((candidate) => candidate.sectionId === sectionId);
+    assert.deepEqual(request?.queries, [`章节-${sectionId}实施方法？`, `章节-${sectionId}如何验收？`]);
     const prompt = plannerPrompts.get(sectionId) || '';
     assert.match(prompt, /local-doc::local-item/);
     assert.match(prompt, new RegExp(remoteReferences[sectionId].id));
