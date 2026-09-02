@@ -1,5 +1,6 @@
 const { buildBidSectionContextHint } = require('../utils/bidSectionContext.cjs');
 const { GLOBAL_FACTS_AGENT_TASK_KEY } = require('./globalFactsAgentV2Config.cjs');
+const { planRemoteKnowledgeQueries } = require('./remoteKnowledgeQueryPlanner.cjs');
 const {
   formatBidAnalysisFactsForPrompt,
   formatOutlineForPrompt,
@@ -308,6 +309,7 @@ ${buildJsonExample(globalFactsMode)}`;
 
 async function runGlobalFactsTaskV2({
   agentService,
+  aiService,
   workspaceStore,
   knowledgeBaseService,
   knowledgeSession,
@@ -446,9 +448,20 @@ async function runGlobalFactsTaskV2({
   if (knowledgeSession?.searchRemote && retrievalTopics.length) {
     const remaining = Math.max(0, 8 - knowledgeItems.length);
     if (remaining > 0) {
+      const queryPlan = await planRemoteKnowledgeQueries({
+        aiService,
+        stage: 'global-facts',
+        context: {
+          projectOverview: storedPlan.projectOverview || '',
+          bidAnalysis: formatBidAnalysisFactsForPrompt(storedPlan),
+          outline: outlineData.outline || [],
+          fallbackTopics: retrievalTopics,
+        },
+        signal: taskControl?.signal,
+      });
       const remoteItems = await knowledgeSession.searchRemote({
         stage: 'global-facts',
-        query: retrievalTopics.join('；'),
+        queries: queryPlan.queries,
         matchCount: remaining,
       });
       remoteKnowledgeFile = buildRemoteKnowledgeFile(remoteItems);

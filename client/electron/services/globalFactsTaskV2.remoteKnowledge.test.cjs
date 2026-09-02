@@ -21,9 +21,11 @@ test('全局事实检索主题完整保留项目概述、招标解析和已确�
   assert.match(topics.join(' '), /智慧水务|工期|平台总体设计/);
 });
 
-test('全局事实远程检索查询保留超过旧上限的项目概述末尾', async () => {
+test('全局事实按 AI 规划的短查询检索，并将完整项目概述交给规划器', async () => {
   const searches = [];
-  const projectOverview = `项目概述开头${'项目概述正文'.repeat(400)}项目概述末尾`;
+  let planningRequest;
+  const tailMarker = '项目概述末尾专项主题：不动产登记成果汇交';
+  const projectOverview = `项目概述开头${'项目概述正文'.repeat(400)}${tailMarker}`;
   const state = {
     tenderFile: { fileName: '招标.md' },
     projectOverview,
@@ -45,6 +47,16 @@ test('全局事实远程检索查询保留超过旧上限的项目概述末尾',
       runTask: async () => ({ output_content: JSON.stringify({ groups: [{ id: 'schedule', title: '项目工期', content: '- 工期：180 日历天' }] }) }),
       updatePersistentTask() {},
     },
+    aiService: {
+      collectJsonResponse: async (input) => {
+        planningRequest = input;
+        return input.normalizer({ queries: [
+          '不动产登记项目的范围和专业边界如何确认？',
+          '项目工期与实施进度通常如何统一表述？',
+          '成果汇交、数据库更新和验收依据通常如何确认？',
+        ] });
+      },
+    },
     workspaceStore,
     knowledgeBaseService: { readReferences: () => [] },
     knowledgeSession: { searchRemote: async (input) => { searches.push(input); return []; } },
@@ -55,8 +67,13 @@ test('全局事实远程检索查询保留超过旧上限的项目概述末尾',
   });
 
   assert.equal(searches.length, 1);
-  assert.ok(searches[0].query.length > 1800);
-  assert.match(searches[0].query, /项目概述末尾/);
+  assert.deepEqual(searches[0].queries, [
+    '不动产登记项目的范围和专业边界如何确认？',
+    '项目工期与实施进度通常如何统一表述？',
+    '成果汇交、数据库更新和验收依据通常如何确认？',
+  ]);
+  assert.equal('query' in searches[0], false);
+  assert.match(planningRequest.messages.map((item) => item.content).join('\n'), new RegExp(tailMarker));
 });
 
 test('全局事实远程参考文件只作为不可信补充材料', () => {
@@ -111,7 +128,7 @@ test('通用二字词命中不构成 provenance，本地知识条目标题可作
   assert.deepEqual(result.groups.map((group) => group.id), ['local-knowledge']);
 });
 
-test('真实全局事实任务传递 stage、query、budget，并在远程 zero-hit 时保留本地材料', async () => {
+test('真实全局事实任务传递 stage、queries、budget，并在远程 zero-hit 时保留本地材料', async () => {
   const searches = [];
   const runs = [];
   const state = {
@@ -139,6 +156,9 @@ test('真实全局事实任务传递 stage、query、budget，并在远程 zero-
   } });
   await runGlobalFactsTaskV2({
     agentService,
+    aiService: {
+      collectJsonResponse: async (input) => input.normalizer({ queries: ['智慧水务项目工期和总体架构如何统一表述？'] }),
+    },
     workspaceStore,
     knowledgeBaseService: {
       readReferences: () => [{ document: { id: 'local-doc' }, items: [{ id: 'item-1', title: '本地工期说明', content: '工期统一按 180 日历天执行。' }] }],
@@ -153,7 +173,8 @@ test('真实全局事实任务传递 stage、query、budget，并在远程 zero-
   });
   assert.equal(searches.length, 1);
   assert.equal(searches[0].stage, 'global-facts');
-  assert.ok(searches[0].query.length > 0);
+  assert.deepEqual(searches[0].queries, ['智慧水务项目工期和总体架构如何统一表述？']);
+  assert.equal('query' in searches[0], false);
   assert.equal(searches[0].matchCount, 7);
   assert.equal(runs.length, 1);
   assert.ok(runs[0].files.some((file) => file.path === '招标文件/招标文件-01-招标.md'));
