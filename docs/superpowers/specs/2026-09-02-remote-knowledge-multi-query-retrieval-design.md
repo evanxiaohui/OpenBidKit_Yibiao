@@ -3,7 +3,7 @@
 ## 1. 文档状态
 
 - 日期：2026-09-02
-- 状态：方案 C 已获用户确认，书面规格待用户审查
+- 状态：用户已确认，待按实施计划开发
 - 适用范围：`client/` 技术方案目录、全局事实和正文编排阶段
 - 远程协议：沿用现有 WeKnora v0.7.2+ `POST /knowledge-search`
 
@@ -31,6 +31,7 @@
 3. 不把完整 query、项目正文或远程片段写入普通日志和 Analytics。
 4. 不在首版增加第二次 LLM 重排；跨 query 排名使用确定性算法。
 5. 不改变本地知识条目优先占用引用预算的现有规则。
+6. 客户端不部署 embedding 或 rerank 模型；单 query 重排由 WeKnora 服务端负责，客户端只执行确定性跨 query 融合。
 
 ## 4. 总体数据流
 
@@ -72,6 +73,7 @@ async function planRemoteKnowledgeQueries({
   aiService,
   stage,
   context,
+  signal,
 })
 ```
 
@@ -175,7 +177,7 @@ session.searchRemote({
 ### 7.2 请求预算与并发
 
 1. 每个 query 对同一远程范围独立执行现有搜索。
-2. 每个 query 请求 8 个候选结果，不能让最终 8 条预算提前限制某个 query 的召回。
+2. `/knowledge-search` 不提供客户端 `match_count` 参数；每个 query 独立接收服务端返回结果，并在客户端保留前 8 个候选后再融合，不能让最终 8 条预算提前限制某个 query 的召回。
 3. 多 query 搜索并发上限为 2；范围分组仍沿用现有并发控制，但同一 `searchMany()` 的实际 HTTP 请求总并发不得超过 3。
 4. 正文编排继续服从现有正文任务并发，不额外创建无限制 Promise。
 5. 任一实际远程请求失败时，整组多 query 检索进入现有任务级失败决策；重试只重放该次尚未成功完成的检索组。
