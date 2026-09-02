@@ -113,7 +113,7 @@ test('keeps action-required state until every shared decision waiter has release
   const slowSearchStarted = new Promise((resolve) => { notifySlowSearchStarted = resolve; });
   const remoteKnowledgeService = {
     getEndpointFingerprint: () => 'fp-1',
-    search: async () => {
+    searchMany: async () => {
       searchCalls += 1;
       if (searchCalls === 1) throw new Error('remote down');
       if (searchCalls === 2) return [];
