@@ -3,6 +3,7 @@ import { trackConfigUsage } from '../../../shared/analytics/analytics';
 import { AppDialog, AppSwitch, DetailHelpLink, FloatingToolbar, InlineSpinner, InputWithAction, OfflineLicenseActivationDialog, useAutoAnswer, useToast } from '../../../shared/ui';
 import { showUpdateReadyToast } from '../../../shared/updateToast';
 import { consumePendingAppNavigation, onAppNavigation } from '../../../shared/navigation/appNavigation';
+import { formatRemoteKnowledgeConnectionError } from '../../../shared/remoteKnowledgeUi';
 import type { FloatingToolbarGroup } from '../../../shared/ui';
 import type { AgentModeScenariosConfig, AgentSelfCheckResult, AgentSelfCheckStepStatus, AiRequestMode, ClientConfig, ComponentsConfig, FileParserProvider, ImageModelConfig, ImageModelProfiles, ImageModelProvider, ImageModelRatio, ImageModelSize, ImageModelStatus, LicenseRuntimeStatus, TextModelConfig, TextModelProfiles, TextModelProvider, UpdateChannel } from '../../../shared/types';
 import type { SettingsPageState } from '../types';
@@ -994,8 +995,8 @@ function SettingsPage({ onDeveloperModeChange }: SettingsPageProps) {
       setTestingRemoteKnowledge(true);
       const result = await window.yibiao.remoteKnowledge.testConnection(draft);
       showToast(`连接成功，已读取 ${result.knowledgeBaseCount} 个知识库`, 'success');
-    } catch {
-      showToast('连接失败，请检查服务地址、API Key 和远程服务状态', 'error');
+    } catch (error) {
+      showToast(formatRemoteKnowledgeConnectionError(error), 'error');
     } finally {
       setTestingRemoteKnowledge(false);
     }

@@ -1,5 +1,10 @@
 import { useEffect, useState } from 'react';
 import type { RemoteKnowledgeBase, RemoteKnowledgeDocumentPage } from '../../../shared/types/ipc';
+import {
+  createRemoteKnowledgeLoadFailure,
+  retryRemoteKnowledgeLoad,
+  type RemoteKnowledgeLoadFailure,
+} from '../../../shared/remoteKnowledgeUi';
 import type { RemoteKnowledgeScope } from '../types';
 import {
   beginRemoteDocumentSelection,
@@ -19,36 +24,41 @@ export default function RemoteKnowledgePicker({ scopes, disabled = false, onChan
   const [bases, setBases] = useState<RemoteKnowledgeBase[]>([]);
   const [documents, setDocuments] = useState<Record<string, RemoteKnowledgeDocumentPage>>({});
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [retry, setRetry] = useState<(() => void) | null>(null);
+  const [loadFailure, setLoadFailure] = useState<RemoteKnowledgeLoadFailure | null>(null);
   const [endpointFingerprint, setEndpointFingerprint] = useState('');
-  const [page, setPage] = useState<Record<string, number>>({});
 
   const loadBases = async () => {
-    setLoading(true); setError('');
+    setLoading(true); setLoadFailure(null);
     try {
       const fingerprint = await window.yibiao?.remoteKnowledge.getEndpointFingerprint() || '';
       setEndpointFingerprint(fingerprint);
       setBases(await window.yibiao?.remoteKnowledge.listKnowledgeBases() || []);
-    } catch (e) { setError(e instanceof Error ? e.message : '读取远程知识库失败'); }
+    } catch (error) { setLoadFailure(createRemoteKnowledgeLoadFailure('bases', error)); }
     finally { setLoading(false); }
   };
   useEffect(() => { void loadBases(); }, []);
 
   const loadDocuments = async (baseId: string, nextPage = 1) => {
+    setLoadFailure(null);
     try {
       const result = await window.yibiao?.remoteKnowledge.listDocuments({ knowledgeBaseId: baseId, page: nextPage, pageSize: 20 });
-      if (result) { setDocuments((prev) => ({ ...prev, [baseId]: result })); setPage((prev) => ({ ...prev, [baseId]: nextPage })); }
-    } catch (e) { setError(e instanceof Error ? e.message : '读取远程文档失败'); setRetry(() => () => void loadDocuments(baseId, nextPage)); }
+      if (result) setDocuments((prev) => ({ ...prev, [baseId]: result }));
+    } catch (error) {
+      setLoadFailure(createRemoteKnowledgeLoadFailure('documents', error, { knowledgeBaseId: baseId, page: nextPage }));
+    }
   };
   return <div className="remote-knowledge-picker outline-knowledge-browser">
     <div className="outline-knowledge-pane-head remote-knowledge-pane-head">
       <strong>知识库</strong>
       <span>{bases.length} 个知识库</span>
     </div>
-    {error && <div className="outline-knowledge-error">{error}<button className="remote-knowledge-action" type="button" onClick={() => { const action = retry || (() => void loadBases()); setError(''); action(); }}>重试</button></div>}
+    {loadFailure && <div className="outline-knowledge-error">{loadFailure.message}<button className="remote-knowledge-action" type="button" onClick={() => {
+      const failure = loadFailure;
+      setLoadFailure(null);
+      void retryRemoteKnowledgeLoad(failure, { loadBases, loadDocuments });
+    }}>重试</button></div>}
     {loading && <div className="outline-knowledge-empty compact">正在读取远程知识库...</div>}
-    {!loading && !error && !bases.length && <div className="outline-knowledge-empty compact">暂无可用远程知识库</div>}
+    {!loading && !loadFailure && !bases.length && <div className="outline-knowledge-empty compact">暂无可用远程知识库</div>}
     {!!bases.length && <div className="remote-knowledge-base-list">
       {bases.map((base) => {
         const current = scopes.find((scope) => scope.knowledgeBaseId === base.id);

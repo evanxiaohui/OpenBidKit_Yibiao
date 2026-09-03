@@ -74,6 +74,34 @@ test('keeps a multi-query group behind one pending task decision', async () => {
   assert.equal(calls, 1);
 });
 
+test('uses the failed search batch retry operation instead of starting the whole search again', async () => {
+  let searchManyCalls = 0;
+  let retryCalls = 0;
+  const firstError = Object.assign(new Error('down'), {
+    retryRemoteKnowledge: async () => {
+      retryCalls += 1;
+      return [];
+    },
+  });
+  const session = createSession({
+    remoteKnowledgeDecisionService: {
+      waitForDecision: async () => 'retry',
+      cancelTask() {},
+    },
+    remoteKnowledgeService: {
+      searchMany: async () => {
+        searchManyCalls += 1;
+        if (searchManyCalls === 1) throw firstError;
+        return [];
+      },
+    },
+  });
+
+  assert.deepEqual(await session.searchRemote({ stage: 'outline', queries: ['查询一', '查询二'] }), []);
+  assert.equal(searchManyCalls, 1);
+  assert.equal(retryCalls, 1);
+});
+
 test('forwards a query array through one remote searchMany operation with matchCount', async () => {
   const received = [];
   const session = createSession({ remoteKnowledgeService: { searchMany: async (request) => { received.push(request); return []; } } });

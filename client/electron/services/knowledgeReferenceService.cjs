@@ -66,6 +66,7 @@ function createKnowledgeReferenceService({ knowledgeBaseService, remoteKnowledge
       }
       if (!normalizedQueries.length || !session.remoteScopes.length || session.remoteDisabledForRun || !remoteKnowledgeService || typeof remoteKnowledgeService.searchMany !== 'function') return [];
       const limit = normalizeCount(matchCount);
+      let retryRemoteKnowledge = null;
       let joinedDecisionWait = false;
       const joinDecisionWait = () => {
         if (joinedDecisionWait) return;
@@ -86,7 +87,9 @@ function createKnowledgeReferenceService({ knowledgeBaseService, remoteKnowledge
           try {
             const compatibilityError = getScopeCompatibilityError();
             if (compatibilityError) throw compatibilityError;
-            const found = await remoteKnowledgeService.searchMany({ queries: normalizedQueries, scopes: session.remoteScopes, matchCount: limit, signal: session.signal });
+            const operation = retryRemoteKnowledge || (() => remoteKnowledgeService.searchMany({ queries: normalizedQueries, scopes: session.remoteScopes, matchCount: limit, signal: session.signal }));
+            retryRemoteKnowledge = null;
+            const found = await operation();
             const unique = new Map();
             for (const item of (Array.isArray(found) ? found : [])) {
               const key = remoteKey(item);
@@ -95,6 +98,9 @@ function createKnowledgeReferenceService({ knowledgeBaseService, remoteKnowledge
             }
             return [...unique.values()].slice(0, limit);
           } catch (error) {
+            retryRemoteKnowledge = typeof error?.retryRemoteKnowledge === 'function'
+              ? error.retryRemoteKnowledge
+              : null;
             joinDecisionWait();
             const decisionPromise = decisionService.waitForDecision({ taskId: session.taskId, workflow: session.workflow, stage, error, signal: session.signal });
             session.pendingDecision = decisionPromise;

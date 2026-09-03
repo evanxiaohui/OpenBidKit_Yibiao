@@ -227,6 +227,89 @@ test('searchMany cancels queued jobs after the first HTTP failure', async () => 
   assert.deepEqual(calls, ['查询一', '查询二']);
 });
 
+test('searchMany retry operation replays only failed or unfinished requests', async () => {
+  const attempts = new Map();
+  const service = createServiceWithFetch(async (_url, init) => {
+    const body = JSON.parse(init.body);
+    const key = `${body.query}:${body.knowledge_base_ids.join(',')}`;
+    const attempt = (attempts.get(key) || 0) + 1;
+    attempts.set(key, attempt);
+    if (key === '查询一:kb-b' && attempt === 1) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      return jsonResponse({ error: 'first failure' }, 400);
+    }
+    return jsonResponse({ success: true, data: [] });
+  });
+
+  let retryOperation;
+  await assert.rejects(service.searchMany({
+    queries: ['查询一', '查询二'],
+    scopes: [
+      { knowledgeBaseId: 'kb-a', mode: 'all', documents: [] },
+      { knowledgeBaseId: 'kb-b', mode: 'documents', documents: [{ knowledgeId: 'doc-1' }] },
+    ],
+    matchCount: 8,
+  }), (error) => {
+    retryOperation = error.retryRemoteKnowledge;
+    return error.category === 'http';
+  });
+
+  assert.equal(typeof retryOperation, 'function');
+  assert.deepEqual(await retryOperation(), []);
+  assert.deepEqual(Object.fromEntries(attempts), {
+    '查询一:kb-a': 1,
+    '查询一:kb-b': 2,
+    '查询二:kb-a': 1,
+    '查询二:kb-b': 1,
+  });
+});
+
+test('searchMany preserves request ID and retries only the job with an incompatible chunk', async () => {
+  const attempts = new Map();
+  const requestIds = new Map();
+  const service = createServiceWithFetch(async (_url, init) => {
+    const body = JSON.parse(init.body);
+    const key = `${body.query}:${body.knowledge_base_ids.join(',')}`;
+    const attempt = (attempts.get(key) || 0) + 1;
+    attempts.set(key, attempt);
+    requestIds.set(`${key}:${attempt}`, init.headers['X-Request-ID']);
+    if (key === '查询一:kb-b' && attempt === 1) {
+      return jsonResponse({ success: true, data: [{ id: 'broken-chunk', content: '缺少来源字段' }] });
+    }
+    return jsonResponse({ success: true, data: [{
+      id: `chunk-${key}-${attempt}`,
+      knowledge_base_id: body.knowledge_base_ids[0],
+      knowledge_id: `doc-${key}`,
+      content: key,
+      score: 0.8,
+    }] });
+  });
+
+  let retryOperation;
+  await assert.rejects(service.searchMany({
+    queries: ['查询一', '查询二'],
+    scopes: [
+      { knowledgeBaseId: 'kb-a', mode: 'all', documents: [] },
+      { knowledgeBaseId: 'kb-b', mode: 'documents', documents: [{ knowledgeId: 'doc-1' }] },
+    ],
+    matchCount: 8,
+  }), (error) => {
+    assert.equal(error.category, 'incompatible');
+    assert.equal(error.requestId, requestIds.get('查询一:kb-b:1'));
+    retryOperation = error.retryRemoteKnowledge;
+    return true;
+  });
+
+  assert.equal(typeof retryOperation, 'function');
+  assert.equal((await retryOperation()).length, 4);
+  assert.deepEqual(Object.fromEntries(attempts), {
+    '查询一:kb-a': 1,
+    '查询一:kb-b': 2,
+    '查询二:kb-a': 1,
+    '查询二:kb-b': 1,
+  });
+});
+
 test('maps returned chunks to generic remote knowledge search results', async () => {
   const service = createServiceWithFetch(async () => jsonResponse({
     success: true,
@@ -436,11 +519,30 @@ test('exposes a normalized endpoint SHA-256 fingerprint without including the AP
 });
 
 test('testConnection rejects a server without the v0.7.2 knowledge-base shape', async () => {
-  const service = createServiceWithFetch(async () => jsonResponse({ success: true, data: [{ id: 'kb-a' }] }));
+  let requestId;
+  const service = createServiceWithFetch(async (_url, init) => {
+    requestId = init.headers['X-Request-ID'];
+    return jsonResponse({ success: true, data: [{ id: 'kb-a' }] });
+  });
 
   await assert.rejects(service.testConnection(), (error) => {
     assert.equal(error.category, 'incompatible');
     assert.equal(error.message, '远程知识服务版本不受支持，请升级到 v0.7.2 或以上');
+    assert.equal(error.requestId, requestId);
+    return true;
+  });
+});
+
+test('testConnection preserves the request ID for an incompatible service response', async () => {
+  let requestId;
+  const service = createServiceWithFetch(async (_url, init) => {
+    requestId = init.headers['X-Request-ID'];
+    return jsonResponse({ success: true, data: { unexpected: true } });
+  });
+
+  await assert.rejects(service.testConnection(), (error) => {
+    assert.equal(error.category, 'incompatible');
+    assert.equal(error.requestId, requestId);
     return true;
   });
 });

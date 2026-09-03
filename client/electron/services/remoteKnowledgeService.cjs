@@ -10,9 +10,10 @@ const DEFAULT_MATCH_COUNT = 8;
 const QUERY_CANDIDATE_LIMIT = 8;
 const RRF_K = 60;
 
-function incompatibleError() {
+function incompatibleError(source) {
   const error = new Error(INCOMPATIBLE_MESSAGE);
   error.category = 'incompatible';
+  if (source?.requestId) error.requestId = String(source.requestId);
   return error;
 }
 
@@ -252,17 +253,25 @@ function createRemoteKnowledgeService({ config, fetchImpl, timeoutMs, retryDelay
   }
 
   async function listKnowledgeBases({ signal } = {}) {
-    return (await getClient().listKnowledgeBases({ signal })).map(mapKnowledgeBase);
+    return getClient().listKnowledgeBases({
+      signal,
+      transformResult: (items) => items.map(mapKnowledgeBase),
+    });
   }
 
   async function listDocuments({ knowledgeBaseId, page, pageSize, signal } = {}) {
-    const result = await getClient().listKnowledge({ knowledgeBaseId, page, pageSize, signal });
-    return {
-      items: result.items.map((item) => mapDocument(item, knowledgeBaseId)),
-      total: result.total,
-      page: result.page,
-      pageSize: result.pageSize,
-    };
+    return getClient().listKnowledge({
+      knowledgeBaseId,
+      page,
+      pageSize,
+      signal,
+      transformResult: (result) => ({
+        items: result.items.map((item) => mapDocument(item, knowledgeBaseId)),
+        total: result.total,
+        page: result.page,
+        pageSize: result.pageSize,
+      }),
+    });
   }
 
   async function searchMany({ queries, scopes, matchCount, signal } = {}) {
@@ -276,21 +285,47 @@ function createRemoteKnowledgeService({ config, fetchImpl, timeoutMs, retryDelay
       group,
       groupIndex,
     })));
-    const resultGroups = await runSearchJobs(jobs, (job, groupSignal) => getClient().hybridSearch({
-      query: job.query,
-      signal: groupSignal,
-      ...job.group,
-    }), signal);
-    const perQueryResults = normalizedQueries.map(() => []);
-    let encounterIndex = 0;
-    for (const [jobIndex, results] of resultGroups.entries()) {
-      const queryResults = perQueryResults[jobs[jobIndex].queryIndex];
-      for (const result of results) {
-        queryResults.push({ item: mapSearchResult(result), encounterIndex });
-        encounterIndex += 1;
+    const resultGroups = new Array(jobs.length);
+    const finalize = () => {
+      const perQueryResults = normalizedQueries.map(() => []);
+      let encounterIndex = 0;
+      for (const [jobIndex, results] of resultGroups.entries()) {
+        const queryResults = perQueryResults[jobs[jobIndex].queryIndex];
+        for (const item of results || []) {
+          queryResults.push({ item, encounterIndex });
+          encounterIndex += 1;
+        }
       }
-    }
-    return fuseSearchResults(perQueryResults.map(rankQueryCandidates), resultLimit);
+      return fuseSearchResults(perQueryResults.map(rankQueryCandidates), resultLimit);
+    };
+    const runPendingJobs = async (pendingIndexes) => {
+      const pendingJobs = pendingIndexes.map((jobIndex) => ({ ...jobs[jobIndex], batchIndex: jobIndex }));
+      try {
+        await runSearchJobs(pendingJobs, async (job, groupSignal) => {
+          const results = await getClient().hybridSearch({
+            query: job.query,
+            signal: groupSignal,
+            transformResult: (items) => items.map(mapSearchResult),
+            ...job.group,
+          });
+          resultGroups[job.batchIndex] = results;
+          return results;
+        }, signal);
+      } catch (error) {
+        const remainingIndexes = jobs
+          .map((_job, jobIndex) => jobIndex)
+          .filter((jobIndex) => resultGroups[jobIndex] === undefined);
+        if (error && typeof error === 'object' && remainingIndexes.length) {
+          Object.defineProperty(error, 'retryRemoteKnowledge', {
+            configurable: true,
+            value: () => runPendingJobs(remainingIndexes),
+          });
+        }
+        throw error;
+      }
+      return finalize();
+    };
+    return runPendingJobs(jobs.map((_job, jobIndex) => jobIndex));
   }
 
   async function search({ query, scopes, matchCount, signal } = {}) {
@@ -302,16 +337,19 @@ function createRemoteKnowledgeService({ config, fetchImpl, timeoutMs, retryDelay
     const signal = hasConfigOverride ? undefined : input?.signal;
     const client = getClient(hasConfigOverride ? input : undefined);
     try {
-      const knowledgeBases = (await client.listKnowledgeBases({ signal })).map(mapKnowledgeBase);
+      const knowledgeBases = await client.listKnowledgeBases({
+        signal,
+        transformResult: (items) => items.map(mapKnowledgeBase),
+      });
       const results = await client.hybridSearch({
         query: '远程知识连接测试',
         knowledgeBaseIds: knowledgeBases.length ? [knowledgeBases[0].id] : [],
         signal,
+        transformResult: (items) => items.map(mapSearchResult),
       });
-      results.map(mapSearchResult);
       return { knowledgeBaseCount: knowledgeBases.length };
     } catch (error) {
-      if (error?.category === 'incompatible') throw incompatibleError();
+      if (error?.category === 'incompatible') throw incompatibleError(error);
       throw error;
     }
   }

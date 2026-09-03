@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import AppDialog from './AppDialog';
 import type { RemoteKnowledgeDecision } from '../types/ipc';
 import { navigateToAppSection, onRemoteKnowledgeDecision } from '../navigation/appNavigation';
+import { formatRemoteKnowledgeDecisionDescription, getRemoteKnowledgeCategoryLabel } from '../remoteKnowledgeUi';
 
 export function RemoteKnowledgeDecisionDialogProvider({ children }: { children: ReactNode }) {
   const [decision, setDecision] = useState<RemoteKnowledgeDecision | null>(null);
@@ -39,7 +40,7 @@ export function RemoteKnowledgeDecisionDialogProvider({ children }: { children: 
         open={visible && Boolean(decision)}
         onOpenChange={(open: boolean) => { if (!open) setVisible(false); }}
         title="远程知识调用失败"
-        description={`${decision?.stage || '当前阶段'}：${decision?.summary || '远程知识检索失败'}`}
+        description={formatRemoteKnowledgeDecisionDescription(decision?.stage, decision?.summary)}
         cardClassName="remote-knowledge-decision-card"
         actions={(
           <div className="remote-knowledge-decision-actions">
@@ -61,7 +62,7 @@ export function RemoteKnowledgeDecisionDialogProvider({ children }: { children: 
         actions={<button type="button" className="primary-action" onClick={() => setDetailsOpen(false)}>关闭</button>}
       >
         <dl className="remote-knowledge-decision-details">
-          <dt>类别</dt><dd>{decision?.category || '-'}</dd>
+          <dt>类别</dt><dd>{getRemoteKnowledgeCategoryLabel(decision?.category)}</dd>
           <dt>状态</dt><dd>{decision?.httpStatus || '-'}</dd>
           <dt>请求 ID</dt><dd>{decision?.requestId || '-'}</dd>
           <dt>发生时间</dt><dd>{decision?.occurredAt ? new Date(decision.occurredAt).toLocaleString('zh-CN') : '-'}</dd>

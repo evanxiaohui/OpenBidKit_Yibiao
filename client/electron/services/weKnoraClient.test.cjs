@@ -126,7 +126,7 @@ test('retries network failures exactly twice after the first attempt', async () 
   assert.equal(attempts, 3);
 });
 
-for (const status of [429, 500]) {
+for (const status of [429, 500, 501, 599]) {
   test(`retries HTTP ${status} exactly twice after the first attempt`, async () => {
     let attempts = 0;
     const client = createClient(async () => {
@@ -138,6 +138,23 @@ for (const status of [429, 500]) {
     assert.equal(attempts, 3);
   });
 }
+
+test('keeps one request ID across retries and exposes it on the final error', async () => {
+  const requestIds = [];
+  const client = createClient(async (_url, init) => {
+    requestIds.push(init.headers['X-Request-ID']);
+    return jsonResponse({ success: false }, 503);
+  });
+
+  await assert.rejects(client.listKnowledgeBases(), (error) => {
+    assert.equal(error.category, 'http');
+    assert.equal(error.httpStatus, 503);
+    assert.equal(error.requestId, requestIds[0]);
+    return true;
+  });
+  assert.equal(requestIds.length, 3);
+  assert.equal(new Set(requestIds).size, 1);
+});
 
 for (const status of [401, 403, 404]) {
   test(`does not retry HTTP ${status}`, async () => {
