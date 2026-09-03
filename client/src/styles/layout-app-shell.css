@@ -292,7 +292,7 @@
 
 .sidebar-footer-shortcuts {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 1fr;
   gap: 5px;
 }
 
@@ -302,17 +302,6 @@
 
 .sidebar.is-collapsed .sidebar-footer-shortcuts {
   grid-template-columns: 1fr;
-}
-
-.group-chat-dialog {
-  width: min(440px, calc(100vw - 40px));
-}
-
-.group-chat-qr {
-  display: block;
-  width: min(360px, 100%);
-  height: auto;
-  margin: 0 auto;
 }
 
 /* [434-537] main-area + agent-runtime-status-bar/dot/copy/meta + keyframes + section-kicker */

@@ -16,16 +16,7 @@ function SecondaryMenuPage({ menuItem, onNavigate }: SecondaryMenuPageProps) {
       return;
     }
 
-    showToast(item.notice.message, 'info', {
-      duration: 7000,
-      actions: item.notice.externalUrl ? [
-        {
-          label: item.notice.actionLabel || '打开链接',
-          variant: 'primary',
-          onClick: () => openExternalUrl(item.notice?.externalUrl || ''),
-        },
-      ] : undefined,
-    });
+    showToast(item.notice.message, 'info', { duration: 4000 });
   };
 
   return (
@@ -67,17 +58,6 @@ function SecondaryMenuPage({ menuItem, onNavigate }: SecondaryMenuPageProps) {
       </section>
     </div>
   );
-}
-
-async function openExternalUrl(url: string) {
-  if (!url) return;
-
-  if (window.yibiao?.openExternal) {
-    await window.yibiao.openExternal(url);
-    return;
-  }
-
-  window.open(url, '_blank', 'noopener,noreferrer');
 }
 
 function SubMenuIcon({ item }: { item: AppSubMenuItem }) {

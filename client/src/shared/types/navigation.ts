@@ -30,8 +30,6 @@ export type SectionId =
 
 export interface AppMenuNotice {
   message: string;
-  actionLabel?: string;
-  externalUrl?: string;
 }
 
 export interface AppSubMenuItem {

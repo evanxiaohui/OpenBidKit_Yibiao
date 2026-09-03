@@ -12,10 +12,6 @@ function getLicenseFilePath(app) {
   return path.join(getUserDataPath(app), 'license.json');
 }
 
-function getDonationStateFilePath(app) {
-  return path.join(getUserDataPath(app), 'donation_state.json');
-}
-
 function getGpuStartupProbePath(app) {
   return path.join(getUserDataPath(app), 'gpu_startup_probe.json');
 }
@@ -197,7 +193,6 @@ module.exports = {
   getDuplicateCheckContentDir,
   getDuplicateCheckDir,
   getConfigFilePath,
-  getDonationStateFilePath,
   getGpuStartupProbePath,
   getFeasibilityReportDir,
   getFeasibilityReportSourcesDir,
