@@ -1018,8 +1018,79 @@ function getHeadingStyle(exportFormat, level) {
   return headings[idx] || null;
 }
 
-function usesNativeHeadingNumbering(headingStyle) {
-  return false;
+function usesNativeHeadingNumbering(headingStyle, level) {
+  if (headingStyle?.numbering_format === 'outline-decimal') return true;
+  if (headingStyle?.numbering_format !== 'custom') return false;
+  const placeholders = String(headingStyle.numbering_template || '')
+    .match(/\{(?:tail\d+|tail|full|zh|num|circled|alpha|ALPHA|roman|ROMAN)\}/g) || [];
+  return placeholders.length === 1 && Boolean(headingNumberingText(headingStyle, level));
+}
+
+function collectNumberedHeadingLevels(items, exportFormat, level = 1, levels = new Set()) {
+  const chapterFrameEnabled = Boolean(getChapterFrameConfig(exportFormat));
+  for (const item of items || []) {
+    const safeLevel = Math.max(1, Math.min(Number(level) || 1, 6));
+    const omitLeafNumbering = chapterFrameEnabled
+      && exportFormat?.heading_border?.min_heading_left_enabled === true
+      && !item?.children?.length;
+    if (!omitLeafNumbering) levels.add(safeLevel);
+    if (item?.children?.length) {
+      collectNumberedHeadingLevels(item.children, exportFormat, level + 1, levels);
+    }
+  }
+  return levels;
+}
+
+function canUseNativeHeadingNumbering(exportFormat, outline) {
+  return [...collectNumberedHeadingLevels(outline, exportFormat)].every((level) => (
+    usesNativeHeadingNumbering(getHeadingStyle(exportFormat, level), level)
+  ));
+}
+
+function headingNumberingFormat(headingStyle) {
+  if (headingStyle?.numbering_format !== 'custom') return LevelFormat.DECIMAL;
+  const template = String(headingStyle.numbering_template || '');
+  if (template.includes('{zh}')) return LevelFormat.CHINESE_COUNTING;
+  if (template.includes('{circled}')) return LevelFormat.DECIMAL_ENCLOSED_CIRCLE;
+  if (template.includes('{alpha}')) return LevelFormat.LOWER_LETTER;
+  if (template.includes('{ALPHA}')) return LevelFormat.UPPER_LETTER;
+  if (template.includes('{roman}')) return LevelFormat.LOWER_ROMAN;
+  if (template.includes('{ROMAN}')) return LevelFormat.UPPER_ROMAN;
+  return LevelFormat.DECIMAL;
+}
+
+function usesLegalHeadingNumbering(headingStyle) {
+  return headingStyle?.numbering_format === 'outline-decimal'
+    || /\{(?:full|tail\d*)\}/.test(String(headingStyle?.numbering_template || ''));
+}
+
+function headingNumberingRange(startLevel, endLevel) {
+  const safeStart = Number(startLevel);
+  const safeEnd = Number(endLevel);
+  if (!Number.isFinite(safeStart) || !Number.isFinite(safeEnd)
+    || safeStart < 1 || safeStart > 6 || safeStart > safeEnd) return '';
+  return Array.from({ length: safeEnd - safeStart + 1 }, (_, index) => `%${safeStart + index}`).join('.');
+}
+
+function headingNumberingText(headingStyle, level) {
+  const currentLevel = Math.max(1, Math.min(Number(level) || 1, 6));
+  if (headingStyle?.numbering_format === 'outline-decimal') {
+    return headingNumberingRange(1, currentLevel);
+  }
+
+  const current = `%${currentLevel}`;
+  return String(headingStyle?.numbering_template || '')
+    .replace(/\{tail(\d+)\}/g, (_, value) => headingNumberingRange(Number(value), currentLevel))
+    .replace(/\{zh\}|\{num\}|\{circled\}|\{alpha\}|\{ALPHA\}|\{roman\}|\{ROMAN\}/g, current)
+    .replace(/\{tail\}/g, headingNumberingRange(currentLevel >= 3 ? 3 : currentLevel, currentLevel))
+    .replace(/\{full\}/g, headingNumberingRange(1, currentLevel))
+    .trim();
+}
+
+function headingNumberingSuffix(headingStyle, level) {
+  const sampleId = Array.from({ length: Math.max(1, Math.min(Number(level) || 1, 6)) }, () => '1').join('.');
+  const samplePrefix = formatOutlineNumber(sampleId, headingStyle);
+  return shouldInsertSpaceAfterNumber(samplePrefix) ? LevelSuffix.SPACE : LevelSuffix.NOTHING;
 }
 
 function imageTypeFromMime(mime) {
@@ -1993,7 +2064,9 @@ function buildFeasibilityAppendixParagraphs(feasibility) {
 
 function buildOutlineHeadingParagraph(item, context, level, options = {}) {
   const style = getHeadingStyle(context.exportFormat, level);
-  const nativeHeadingNumbering = usesNativeHeadingNumbering(style) && !options.manualNumbering && !options.omitNumbering;
+  const nativeHeadingNumbering = context.nativeHeadingNumberingEnabled
+    && usesNativeHeadingNumbering(style, level)
+    && !options.omitNumbering;
   const displayTitle = options.omitNumbering
     ? String(item.title || '')
     : (nativeHeadingNumbering ? String(item.title || '') : formatOutlineTitle(item.id, item.title, style));
@@ -2039,7 +2112,7 @@ async function addChapterFrameRows(rows, items, context, level = 1) {
       }
       rows.push(buildChapterLeafRow(
         context.exportFormat,
-        buildOutlineHeadingParagraph(item, context, level, { compact: true, manualNumbering: true, disablePageBreakBefore: true, omitNumbering: true }),
+        buildOutlineHeadingParagraph(item, context, level, { compact: true, disablePageBreakBefore: true, omitNumbering: true }),
         bodyChildren,
         level,
       ));
@@ -2050,7 +2123,7 @@ async function addChapterFrameRows(rows, items, context, level = 1) {
 
     rows.push(buildChapterHeadingRow(
       context.exportFormat,
-      buildOutlineHeadingParagraph(item, context, level, { compact: true, disableIndent: true, manualNumbering: true, disablePageBreakBefore: true }),
+      buildOutlineHeadingParagraph(item, context, level, { compact: true, disableIndent: true, disablePageBreakBefore: true }),
       level,
     ));
 
@@ -2103,22 +2176,27 @@ async function addOutlineItems(children, items, context, level = 1) {
   }
 }
 
-function createHeadingNumberingConfig() {
+function createHeadingNumberingConfig(exportFormat) {
   return {
     reference: HEADING_NUMBERING_REFERENCE,
-    levels: [0, 1, 2, 3, 4, 5].map((level) => ({
-      level,
-      format: LevelFormat.DECIMAL,
-      start: 1,
-      text: Array.from({ length: level + 1 }, (_, index) => `%${index + 1}`).join('.'),
-      alignment: AlignmentType.START,
-      suffix: LevelSuffix.TAB,
-      style: {
-        paragraph: {
-          indent: { left: 360 + level * 360, hanging: 360 },
+    levels: [0, 1, 2, 3, 4, 5].map((level) => {
+      const headingStyle = getHeadingStyle(exportFormat, level + 1);
+      const nativeNumbering = usesNativeHeadingNumbering(headingStyle, level + 1);
+      return {
+        level,
+        format: nativeNumbering ? headingNumberingFormat(headingStyle) : LevelFormat.DECIMAL,
+        start: 1,
+        text: nativeNumbering ? headingNumberingText(headingStyle, level + 1) : `%${level + 1}`,
+        alignment: AlignmentType.START,
+        suffix: nativeNumbering ? headingNumberingSuffix(headingStyle, level + 1) : LevelSuffix.SPACE,
+        isLegalNumberingStyle: nativeNumbering && usesLegalHeadingNumbering(headingStyle),
+        style: {
+          paragraph: {
+            indent: { left: 0, hanging: 0 },
+          },
         },
-      },
-    })),
+      };
+    }),
   };
 }
 
@@ -2179,7 +2257,7 @@ function createNumberingConfig(context) {
 
   const config = [];
   if (context.usesHeadingNumbering) {
-    config.push(createHeadingNumberingConfig());
+    config.push(createHeadingNumberingConfig(context.exportFormat));
   }
   config.push(...references.map((referenceConfig) => ({
     reference: referenceConfig.reference,
@@ -2253,6 +2331,7 @@ async function buildDocxResult(payload, options = {}) {
     unsupportedHtmlTags: new Set(),
     developerLogger: options.developerLogger,
     exportFormat,
+    nativeHeadingNumberingEnabled: canUseNativeHeadingNumbering(exportFormat, payload.outline || []),
     feasibility: readFeasibilityExportContext(payload),
   };
   writeExportLog(context, 'export.docx.build.started', {
