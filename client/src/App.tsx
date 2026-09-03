@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import AppRouter from './app/AppRouter';
 import GpuHardwareAccelerationPrompt from './app/GpuHardwareAccelerationPrompt';
+import PluginUpdateNotifier from './app/PluginUpdateNotifier';
 import RequiredOnlineServicesPrompt from './app/RequiredOnlineServicesPrompt';
-import UpdateNotifier from './app/UpdateNotifier';
 import AppShell from './components/AppShell';
 import { trackAppOpen, trackConfigUsage, trackPageView } from './shared/analytics/analytics';
 import type { SectionId } from './shared/types/navigation';
@@ -60,7 +60,7 @@ function App() {
     <>
       <GpuHardwareAccelerationPrompt />
       <RequiredOnlineServicesPrompt />
-      <UpdateNotifier noticeEnabled={false} />
+      <PluginUpdateNotifier />
       <AppShell
         activeSection={activeSection}
         developerMode={developerMode}

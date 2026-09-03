@@ -56,16 +56,7 @@ function Sidebar({ activeSection, developerMode, onSectionChange }: SidebarProps
       return;
     }
 
-    showToast(item.notice.message, 'info', {
-      duration: 7000,
-      actions: item.notice.externalUrl ? [
-        {
-          label: item.notice.actionLabel || '打开链接',
-          variant: 'primary',
-          onClick: () => openExternalUrl(item.notice?.externalUrl || ''),
-        },
-      ] : undefined,
-    });
+    showToast(item.notice.message, 'info', { duration: 4000 });
   };
 
   return (

@@ -12,16 +12,17 @@ function getLicenseFilePath(app) {
   return path.join(getUserDataPath(app), 'license.json');
 }
 
-function getDonationStateFilePath(app) {
-  return path.join(getUserDataPath(app), 'donation_state.json');
-}
-
 function getGpuStartupProbePath(app) {
   return path.join(getUserDataPath(app), 'gpu_startup_probe.json');
 }
 
 function getWorkspaceDir(app) {
   return path.join(getUserDataPath(app), 'workspace');
+}
+
+/** 强制删除失败时的回收目录;放在 workspace 外,避免被工作区扫描看到。 */
+function getWorkspaceTrashDir(app) {
+  return path.join(getUserDataPath(app), 'workspace-trash');
 }
 
 function getWorkspaceDatabasePath(app) {
@@ -197,7 +198,6 @@ module.exports = {
   getDuplicateCheckContentDir,
   getDuplicateCheckDir,
   getConfigFilePath,
-  getDonationStateFilePath,
   getGpuStartupProbePath,
   getFeasibilityReportDir,
   getFeasibilityReportSourcesDir,
@@ -223,5 +223,6 @@ module.exports = {
   getTechnicalPlanTenderOriginalsDir,
   getWorkspaceDir,
   getWorkspaceDatabasePath,
+  getWorkspaceTrashDir,
   getUserDataPath,
 };

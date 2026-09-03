@@ -304,17 +304,6 @@
   grid-template-columns: 1fr;
 }
 
-.group-chat-dialog {
-  width: min(440px, calc(100vw - 40px));
-}
-
-.group-chat-qr {
-  display: block;
-  width: min(360px, 100%);
-  height: auto;
-  margin: 0 auto;
-}
-
 /* [434-537] main-area + agent-runtime-status-bar/dot/copy/meta + keyframes + section-kicker */
 .main-area {
   position: relative;

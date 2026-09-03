@@ -1,10 +1,9 @@
-const { clipboard, ipcMain, shell } = require('electron');
+const { clipboard, dialog, ipcMain, shell } = require('electron');
 const { registerAgentIpc } = require('./agentIpc.cjs');
 const { registerAiIpc } = require('./aiIpc.cjs');
 const { registerAutoConfirmationIpc } = require('./autoConfirmationIpc.cjs');
 const { registerConfigIpc } = require('./configIpc.cjs');
 const { registerDeveloperIpc } = require('./developerIpc.cjs');
-const { registerDonationIpc } = require('./donationIpc.cjs');
 const { registerDuplicateCheckIpc } = require('./duplicateCheckIpc.cjs');
 const { registerExportIpc } = require('./exportIpc.cjs');
 const { registerFileIpc } = require('./fileIpc.cjs');
@@ -24,9 +23,9 @@ const { createAiService } = require('../services/aiService.cjs');
 const { createAutoConfirmationService } = require('../services/autoConfirmationService.cjs');
 const { createConfigStore } = require('../services/configStore.cjs');
 const { createDeveloperExpansionReplaceTestService } = require('../services/developerExpansionReplaceTest.cjs');
-const { createDonationService } = require('../services/donationService.cjs');
 const { createDuplicateCheckService } = require('../services/duplicateCheckService.cjs');
 const { createDuplicateCheckStore } = require('../services/duplicateCheckStore.cjs');
+const { createCheckResultExportService } = require('../services/checkResultExportService.cjs');
 const { createExportService } = require('../services/exportService.cjs');
 const { createFileService } = require('../services/fileService.cjs');
 const { createKnowledgeBaseService } = require('../services/knowledgeBaseService.cjs');
@@ -48,6 +47,8 @@ const { createTemplateStore } = require('../services/templateStore.cjs');
 const { checkRequiredOnlineServices, getRequiredOnlineServiceStatus } = require('../services/requiredOnlineServices.cjs');
 const { initLocalImageRenderService } = require('../services/localImageRenderService.cjs');
 const { createOpenXmlHelperService } = require('../services/openXmlHelperService.cjs');
+const { cleanupTrashDirSync } = require('../utils/forceRemove.cjs');
+const { getWorkspaceTrashDir } = require('../utils/paths.cjs');
 
 let pendingUiCurrentView = null;
 let agentWorkspaceServiceRef = null;
@@ -150,6 +151,7 @@ const workspaceDatabaseChannels = [
   'duplicate-check:load-state',
   'duplicate-check:save-files',
   'duplicate-check:save-ui-state',
+  'duplicate-check:export-excel',
   'duplicate-check:update-state',
   'duplicate-check:clear',
   'rejection-check:load-state',
@@ -158,6 +160,7 @@ const workspaceDatabaseChannels = [
   'rejection-check:remove-document',
   'rejection-check:save-ui-state',
   'rejection-check:update-state',
+  'rejection-check:export-excel',
   'rejection-check:clear',
   'knowledge-base:list',
   'knowledge-base:create-folder',
@@ -254,6 +257,8 @@ function registerWorkspaceDatabaseServices({ app, configStore, aiService, agentS
   const sqliteDatabase = createSqliteDatabase(app, { onStatus: updateStatus });
   runHistoricalStorageCleanup({ app, db: sqliteDatabase.db, configStore, onStatus: updateStatus });
   clearStalePiTaskArchives(app);
+  // 清理上次强制删除时因占用未能物理删除、被移入回收目录的残留
+  cleanupTrashDirSync(getWorkspaceTrashDir(app));
   clearOrphanedGeneratedImages(app, sqliteDatabase.db);
   const taskLogStore = createTaskLogStore({ db: sqliteDatabase.db });
   const knowledgeBaseStore = createKnowledgeBaseStore({ app, db: sqliteDatabase.db });
@@ -265,6 +270,12 @@ function registerWorkspaceDatabaseServices({ app, configStore, aiService, agentS
   const rejectionCheckStore = createRejectionCheckStore({ app, db: sqliteDatabase.db, fileService, technicalPlanStore, taskLogStore });
   const templateStore = createTemplateStore({ db: sqliteDatabase.db });
   const duplicateCheckService = createDuplicateCheckService({ app, configStore, workspaceStore: duplicateCheckStore });
+  const checkResultExportService = createCheckResultExportService({
+    app,
+    dialog,
+    rejectionCheckStore,
+    duplicateCheckStore,
+  });
   const taskService = createTaskService({ aiService, agentService, autoConfirmationService, technicalPlanStore, rejectionCheckStore, duplicateCheckStore, feasibilityReportStore, knowledgeBaseService, knowledgeReferenceService, remoteKnowledgeDecisionService, duplicateCheckService, openXmlHelperService });
   const agentWorkspaceService = createAgentWorkspaceService({ agentService, taskService, technicalPlanStore, feasibilityReportStore });
   agentWorkspaceServiceRef = agentWorkspaceService;
@@ -278,8 +289,8 @@ function registerWorkspaceDatabaseServices({ app, configStore, aiService, agentS
   registerKnowledgeBaseIpc({ knowledgeBaseService });
   registerTechnicalPlanIpc({ technicalPlanStore, taskService, remoteKnowledgeService });
   registerFeasibilityReportIpc({ feasibilityReportStore, taskService });
-  registerDuplicateCheckIpc({ duplicateCheckStore });
-  registerRejectionCheckIpc({ rejectionCheckStore, taskService });
+  registerDuplicateCheckIpc({ duplicateCheckStore, checkResultExportService });
+  registerRejectionCheckIpc({ rejectionCheckStore, taskService, checkResultExportService });
   registerTemplateIpc({ templateStore });
   registerTaskIpc({ taskService });
   updateStatus({ phase: 'ready', ready: true, message: '本地数据库已就绪' });
@@ -311,11 +322,6 @@ function registerIpcHandlers({ app, mainWindow, checkAndDownloadUpdate, triggerU
   const licenseService = createLicenseService({ app, configStore });
   const aiService = createAiService({ app, configStore });
   const developerExpansionReplaceTestService = createDeveloperExpansionReplaceTestService({ aiService });
-  const donationService = createDonationService({
-    app,
-    onPrompt: (payload) => sendToWebContents(mainWindow.webContents, 'donation:prompt', payload),
-    onPaid: () => sendToWebContents(mainWindow.webContents, 'donation:paid'),
-  });
   const autoConfirmationService = createAutoConfirmationService({ configStore });
   const agentService = createAgentService({ app, configStore, aiService, licenseService, autoConfirmationService });
   const fileService = createFileService({ app, configStore });
@@ -327,7 +333,6 @@ function registerIpcHandlers({ app, mainWindow, checkAndDownloadUpdate, triggerU
   let gpuTrialRelaunchStarted = false;
 
   const closeServices = async () => {
-    donationService.close?.();
     remoteKnowledgeDecisionService.dispose?.();
     await agentService.close?.();
     autoConfirmationService.close?.();
@@ -412,13 +417,12 @@ function registerIpcHandlers({ app, mainWindow, checkAndDownloadUpdate, triggerU
     openDeveloperAgentMonitorWindow,
     developerExpansionReplaceTestService,
   });
-  registerDonationIpc({ donationService });
   registerLicenseIpc({ licenseService });
   registerAiIpc({ aiService });
   registerAgentIpc({ agentService });
   registerAutoConfirmationIpc({ autoConfirmationService });
   registerFileIpc({ fileService });
-  registerExportIpc({ exportService, donationService });
+  registerExportIpc({ exportService });
   registerSystemFontIpc({ systemFontService });
   registerPluginIpc(ipcMain, app, {
     agentService,

@@ -53,6 +53,13 @@ export interface WordExportResult {
   warnings?: string[];
 }
 
+export interface CheckResultExportResult {
+  success: boolean;
+  canceled?: boolean;
+  path?: string;
+  message?: string;
+}
+
 export interface RequiredOnlineServiceStatus {
   id: string;
   label: string;
@@ -539,45 +546,6 @@ export interface AgentSelfCheckReportExportResult {
   message: string;
 }
 
-export interface DonationPaymentConfig {
-  channel: 'xorpay' | 'afdian';
-  xorpay_min_order_amount: string;
-}
-
-export interface DonationCreateRequest {
-  amount: string;
-  nickname?: string;
-  email?: string;
-}
-
-export interface DonationIntent {
-  channel: 'xorpay' | 'afdian';
-  payment_url?: string | null;
-  instructions: string;
-  order_id?: number | null;
-  merchant_order_no?: string | null;
-  amount?: string | null;
-  min_amount?: string | null;
-  status?: string | null;
-  qr?: string | null;
-  qr_image_url?: string | null;
-  expires_in?: number | null;
-}
-
-export interface DonationOrderStatus {
-  merchant_order_no: string;
-  amount: string;
-  channel: 'xorpay' | 'afdian';
-  status: string;
-  paid_at: string | null;
-}
-
-export interface DonationPromptPayload {
-  reason: 'runtime' | 'word-export';
-  accumulatedRuntimeMs: number;
-  wordExportClicks: number;
-}
-
 export interface YibiaoBridge {
   appName: string;
   platform: string;
@@ -588,14 +556,6 @@ export interface YibiaoBridge {
   relaunchWithGpuHardwareAccelerationDisabled: () => Promise<{ success: boolean }>;
   requiredOnlineServices: {
     getStatus: () => Promise<RequiredOnlineServicesStatus>;
-  };
-  donation: {
-    getConfig: () => Promise<DonationPaymentConfig>;
-    createTip: (request: DonationCreateRequest) => Promise<DonationIntent>;
-    getOrderStatus: (merchantOrderNo: string) => Promise<DonationOrderStatus>;
-    finalizeOrderStatus: (merchantOrderNo: string) => Promise<DonationOrderStatus>;
-    onPrompt: (callback: (payload: DonationPromptPayload) => void) => () => void;
-    onPaid: (callback: () => void) => () => void;
   };
   getLatestVersion: () => Promise<LatestReleaseInfo>;
   getUpdateDownloadUrl: () => Promise<string>;
@@ -756,6 +716,7 @@ export interface YibiaoBridge {
     saveUiState: (payload: Partial<Pick<DuplicateCheckWorkspaceState, 'step' | 'activeAnalysisTab'>>) => Promise<void>;
     updateState: (partial: DuplicateCheckWorkspacePatch) => Promise<void>;
     clear: () => Promise<{ success: boolean; message?: string }>;
+    exportExcel: (request: { signature: string }) => Promise<CheckResultExportResult>;
   };
   rejectionCheck: {
     loadState: () => Promise<RejectionCheckWorkspaceState>;
@@ -764,6 +725,7 @@ export interface YibiaoBridge {
     removeDocument: (role: RejectionDocumentRole, documentId?: string) => Promise<void>;
     saveUiState: (payload: Partial<Pick<RejectionCheckWorkspaceState, 'step' | 'activeDocumentTab' | 'activeResultTab' | 'activeCheckResultTab' | 'customCheckItems' | 'checkOptions'>>) => Promise<void>;
     updateState: (partial: RejectionCheckWorkspacePatch) => Promise<void>;
+    exportExcel: (request: { rejectionInputSignature: string; bidSignature: string }) => Promise<CheckResultExportResult>;
     clear: () => Promise<{ success: boolean; message?: string }>;
   };
   templates: {

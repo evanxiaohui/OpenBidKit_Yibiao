@@ -346,6 +346,7 @@ function TechnicalPlanHome({ workflowKind, registerLeaveGuard, onSectionChange }
   const [installingPetPlugin, setInstallingPetPlugin] = useState(false);
   const [bidAnalysisFocusRequest, setBidAnalysisFocusRequest] = useState<{ taskId: string } | null>(null);
   const [globalFactsFocusRequest, setGlobalFactsFocusRequest] = useState<{ groupId: string } | null>(null);
+  const [isResetting, setIsResetting] = useState(false);
   const sortGuardRef = useRef<OutlineSortGuard | null>(null);
   const sortLeaveResolverRef = useRef<((allowed: boolean) => void) | null>(null);
   const outlineWordControlLeaveResolverRef = useRef<((allowed: boolean) => void) | null>(null);
@@ -1081,10 +1082,13 @@ function TechnicalPlanHome({ workflowKind, registerLeaveGuard, onSectionChange }
   };
 
   const resetTechnicalPlan = async () => {
+    if (isResetting) return;
     if (!window.confirm('会清空整个技术方案编写进度，是否确认？')) {
       return;
     }
 
+    setIsResetting(true);
+    showToast('正在重置技术方案，将停止后台任务并清理工作区文件，请稍候…', 'info');
     try {
       const result = await window.yibiao?.technicalPlan.clear();
       setState({ ...resetState, workflowKind });
@@ -1093,6 +1097,8 @@ function TechnicalPlanHome({ workflowKind, registerLeaveGuard, onSectionChange }
       showToast(result?.message || '技术方案已重置', 'success');
     } catch (error) {
       showToast(error instanceof Error ? error.message : '重置技术方案失败', 'error');
+    } finally {
+      setIsResetting(false);
     }
   };
 
@@ -1285,9 +1291,10 @@ function TechnicalPlanHome({ workflowKind, registerLeaveGuard, onSectionChange }
       actions: [
         {
           id: 'reset',
-          label: '重置',
+          label: isResetting ? '重置中...' : '重置',
           variant: 'danger' as const,
-          tooltip: '清空当前技术方案流程',
+          disabled: isResetting,
+          tooltip: isResetting ? '正在停止后台任务并清理工作区文件，请稍候' : '清空当前技术方案流程',
           onClick: resetTechnicalPlan,
         },
         {
