@@ -16,6 +16,21 @@ test('inline bold lead-ins use a Chinese colon before following prose', () => {
   assert.equal(normalize('__房屋属性信息核实.__ 房屋权属方面'), '__房屋属性信息核实：__ 房屋权属方面');
 });
 
+test('inline lead-ins with an internal colon use a comma before following prose', () => {
+  assert.equal(
+    normalize('**第一阶段：前期准备与资料对接。** 自合同签订后即启动'),
+    '**第一阶段：前期准备与资料对接，** 自合同签订后即启动',
+  );
+  assert.equal(
+    normalize('**第一阶段：前期准备与资料对接.** 自合同签订后即启动'),
+    '**第一阶段：前期准备与资料对接，** 自合同签订后即启动',
+  );
+});
+
+test('standalone titles keep internal colons while removing terminal punctuation', () => {
+  assert.equal(normalize('**第一阶段：前期准备与资料对接。**'), '**第一阶段：前期准备与资料对接**');
+});
+
 test('standalone bold lead-ins remove terminal sentence punctuation', () => {
   assert.equal(normalize('**自查自检机制。**'), '**自查自检机制**');
   assert.equal(normalize('  **自查自检机制.**  '), '  **自查自检机制**  ');
@@ -60,6 +75,7 @@ test('chapter content prompt states the lead-in punctuation rules', () => {
   const prompt = messages.map((message) => message.content).join('\n');
   assert.match(prompt, /行内加粗引导语/);
   assert.match(prompt, /中文冒号/);
+  assert.match(prompt, /中文逗号/);
   assert.match(prompt, /独立成行/);
 });
 
@@ -78,5 +94,6 @@ test('word adjustment prompt states the lead-in punctuation rules', () => {
   const prompt = messages.map((message) => message.content).join('\n');
   assert.match(prompt, /行内加粗引导语/);
   assert.match(prompt, /中文冒号/);
+  assert.match(prompt, /中文逗号/);
   assert.match(prompt, /独立成行/);
 });

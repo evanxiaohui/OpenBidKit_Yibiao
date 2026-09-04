@@ -16,7 +16,7 @@
 - Create: `client/electron/services/contentGenerationTask.punctuation.test.cjs`
 - Test: `client/electron/services/contentGenerationTask.cjs`
 
-- [ ] **Step 1: Write tests** for inline bold lead-ins, standalone bold lines, `__...__`, code fences, table rows, full-line image Markdown/HTML, Markdown-heading conversion, CRLF, unclosed fences, ordinary prose, and preservation of existing chapter-title stripping/Markdown normalization.
+- [ ] **Step 1: Write tests** for inline bold lead-ins, inline lead-ins with an internal colon, standalone bold lines with an internal colon, `__...__`, code fences, table rows, full-line image Markdown/HTML, Markdown-heading conversion, CRLF, unclosed fences, ordinary prose, and preservation of existing chapter-title stripping/Markdown normalization.
 - [ ] **Step 2: Run** `node --test client/electron/services/contentGenerationTask.punctuation.test.cjs` and confirm failure because the helper is not implemented/exported.
 
 ### Task 2: Implement punctuation normalization and prompt constraints
@@ -24,7 +24,7 @@
 **Files:**
 - Modify: `client/electron/services/contentGenerationTask.cjs`
 
-- [ ] **Step 1: Implement** a fenced-code-aware line normalizer that skips table rows and full-line `![...](...)`/`<img ...>` lines, then changes sentence-final `。`/`.` inside complete bold lead-ins to `：` when inline text follows, and removes it for standalone bold lines.
+- [ ] **Step 1: Implement** a fenced-code-aware line normalizer that skips table rows and full-line `![...](...)`/`<img ...>` lines, then changes sentence-final `。`/`.` inside complete bold lead-ins to `：` when inline text follows without an internal colon, to `，` when an internal colon already exists, and removes it for standalone bold lines.
 - [ ] **Step 2: Call** the normalizer from `normalizeLeafContentForSave()` only after `normalizeGeneratedMarkdown()`, `stripRepeatedChapterTitle()`, and `stripMarkdownHeadingsFromLeafContent()` have completed, so all existing save paths receive the same behavior.
 - [ ] **Step 3: Update** the chapter-content prompt rules to state the required punctuation explicitly.
 - [ ] **Step 4: Export** the helper for focused tests without changing runtime APIs.
