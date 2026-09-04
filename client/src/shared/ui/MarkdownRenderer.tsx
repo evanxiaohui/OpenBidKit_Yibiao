@@ -231,7 +231,7 @@ function MarkdownRenderer({
 
       const props = { key, className };
       if (tag === 'p') {
-        const isFigureCaption = /^图[:：]/.test((element.textContent || '').trim());
+        const isFigureCaption = element.innerHTML.includes('<!-- yibiao-figure-caption -->');
         return <p {...props} className={[className, isFigureCaption ? 'markdown-figure-caption' : ''].filter(Boolean).join(' ') || undefined}>{renderedChildren}</p>;
       }
 

@@ -1807,7 +1807,7 @@ async function htmlNodeToDocxBlocks($, node, context, options = {}) {
     return htmlNodesToDocxBlocks($, $(node).contents().toArray(), context, options);
   }
   if (['p', 'div', 'section', 'article', 'span', 'strong', 'b', 'em', 'i', 'del', 's', 'strike', 'a', 'code', 'label', 'small', 'sub', 'sup', 'mark'].includes(tag)) {
-    const isFigureCaption = /^图[:：]/.test($(node).text().trim());
+    const isFigureCaption = String($(node).html() || '').includes('<!-- yibiao-figure-caption -->');
     if (isFigureCaption) {
       return [paragraph([textRun($(node).text().trim(), getCaptionRunMarks(context))], getCaptionParagraphOptions(context))];
     }
