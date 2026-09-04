@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 
 const {
+  applyGeneratedIllustrationsToDocument,
   generateMermaidIllustration,
   generateMermaidAiIllustration,
 } = require('./contentIllustrationGeneration.cjs');
@@ -92,4 +93,30 @@ test('Mermaid AI 对象式运行参数会原样透传暂停异常', async () => 
     caught = error;
   }
   assert.equal(caught, pauseError);
+});
+
+test('Mermaid AI asset_url result creates standard yibiao-asset image Markdown', () => {
+  const result = applyGeneratedIllustrationsToDocument({
+    items: [{
+      item_id: 'mermaid-1',
+      kind: 'mermaid',
+      title: 'Implementation flow',
+      section_ids: ['1.1'],
+      placement: 'after',
+      generation: {
+        status: 'success',
+        asset_url: 'yibiao-asset://generated-images/mermaid-1.png',
+      },
+    }],
+  }, {
+    outline: [{ id: '1.1', title: 'Implementation flow', content: 'Existing text.' }],
+  }, {
+    '1.1': { id: '1.1', status: 'success', content: 'Existing text.' },
+  });
+
+  assert.equal(
+    result.sections['1.1'].content,
+    'Existing text.\n\n<!-- yibiao-illustration:start id="mermaid-1" -->\n![Implementation flow](yibiao-asset://generated-images/mermaid-1.png)\n\n*<!-- yibiao-figure-caption -->Implementation flow*\n<!-- yibiao-illustration:end -->',
+  );
+  assert.equal(result.outlineData.outline[0].content, result.sections['1.1'].content);
 });
