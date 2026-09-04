@@ -50,6 +50,7 @@ export interface ContentGenerationOptions {
   useAiImages: boolean;
   maxAiImages: number;
   useMermaidImages: boolean;
+  useAiRedesignForMermaid: boolean;
   maxMermaidImages: number;
   useHtmlImages: boolean;
   maxHtmlImages: number;

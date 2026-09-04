@@ -108,6 +108,7 @@ const defaultContentGenerationOptions: ContentGenerationOptions = {
   useAiImages: false,
   maxAiImages: 6,
   useMermaidImages: true,
+  useAiRedesignForMermaid: false,
   maxMermaidImages: 5,
   useHtmlImages: true,
   maxHtmlImages: 10,
@@ -154,6 +155,7 @@ function normalizeGenerationOptions(options: ContentGenerationOptions | undefine
     useAiImages: Boolean(options?.useAiImages ?? fallback.useAiImages) && imageModelAvailable,
     maxAiImages: Math.max(0, Math.min(Number.isFinite(requestedMaxAiImages) ? Math.round(requestedMaxAiImages) : fallback.maxAiImages, maxAiImagesLimit)),
     useMermaidImages: Boolean(options?.useMermaidImages ?? fallback.useMermaidImages),
+    useAiRedesignForMermaid: Boolean(options?.useAiRedesignForMermaid ?? fallback.useAiRedesignForMermaid),
     maxMermaidImages: Math.max(0, Math.min(Number.isFinite(requestedMaxMermaidImages) ? Math.round(requestedMaxMermaidImages) : fallback.maxMermaidImages, maxAiImagesLimit)),
     useHtmlImages: Boolean(options?.useHtmlImages ?? fallback.useHtmlImages),
     maxHtmlImages: Math.max(0, Math.min(Number.isFinite(requestedMaxHtmlImages) ? Math.round(requestedMaxHtmlImages) : fallback.maxHtmlImages, maxAiImagesLimit)),
@@ -826,6 +828,7 @@ function ContentEditPage({
         useAiImages: nextImageModelAvailable && savedGenerationOptions.useAiImages,
         maxAiImages: savedGenerationOptions.maxAiImages,
         useMermaidImages: savedGenerationOptions.useMermaidImages,
+        useAiRedesignForMermaid: savedGenerationOptions.useAiRedesignForMermaid,
         maxMermaidImages: savedGenerationOptions.maxMermaidImages,
         useHtmlImages: savedGenerationOptions.useHtmlImages,
         maxHtmlImages: savedGenerationOptions.maxHtmlImages,
@@ -896,6 +899,7 @@ function ContentEditPage({
           useAiImages: nextImageModelAvailable && savedGenerationOptions.useAiImages,
           maxAiImages: savedGenerationOptions.maxAiImages,
           useMermaidImages: savedGenerationOptions.useMermaidImages,
+          useAiRedesignForMermaid: savedGenerationOptions.useAiRedesignForMermaid,
           maxMermaidImages: savedGenerationOptions.maxMermaidImages,
           useHtmlImages: savedGenerationOptions.useHtmlImages,
           maxHtmlImages: savedGenerationOptions.maxHtmlImages,
@@ -1381,20 +1385,33 @@ function ContentEditPage({
                     aria-label="是否使用 Mermaid 生图" />
                 </div>
                 {draftGenerationOptions.useMermaidImages && (
-                  <label className="content-generation-config-row">
-                    <span><strong>Mermaid 生图上限</strong></span>
-                    <input
-                      type="number"
-                      min="0"
-                      max={Math.max(1, leaves.length)}
-                      value={draftGenerationOptions.maxMermaidImages}
-                      disabled={generationStrategyLocked}
-                      onChange={(event) => setDraftGenerationOptions((prev) => ({
-                        ...prev,
-                        maxMermaidImages: Math.max(0, Math.min(Number(event.target.value) || 0, Math.max(1, leaves.length))),
-                      }))}
-                    />
-                  </label>
+                  <>
+                    <div className="content-generation-config-row">
+                      <span>
+                        <strong>Mermaid 改用 AI 图片重绘</strong>
+                        <small>{imageModelAvailable ? '开启后仅影响后续新生成的 Mermaid 图片。' : '请先配置并测试图片模型。'}</small>
+                      </span>
+                      <AppSwitch
+                        checked={draftGenerationOptions.useAiRedesignForMermaid}
+                        disabled={generationStrategyLocked || !imageModelAvailable}
+                        onCheckedChange={(checked) => setDraftGenerationOptions((prev) => ({ ...prev, useAiRedesignForMermaid: checked }))}
+                        aria-label="是否将 Mermaid 改用 AI 图片重绘" />
+                    </div>
+                    <label className="content-generation-config-row">
+                      <span><strong>Mermaid 生图上限</strong></span>
+                      <input
+                        type="number"
+                        min="0"
+                        max={Math.max(1, leaves.length)}
+                        value={draftGenerationOptions.maxMermaidImages}
+                        disabled={generationStrategyLocked}
+                        onChange={(event) => setDraftGenerationOptions((prev) => ({
+                          ...prev,
+                          maxMermaidImages: Math.max(0, Math.min(Number(event.target.value) || 0, Math.max(1, leaves.length))),
+                        }))}
+                      />
+                    </label>
+                  </>
                 )}
               </div>
               <div className="content-generation-config-group">
