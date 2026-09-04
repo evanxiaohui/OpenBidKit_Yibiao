@@ -13,6 +13,7 @@ const {
   buildIllustrationExecutionContexts,
   generateAiIllustration,
   generateHtmlIllustration,
+  generateMermaidAiIllustration,
   generateMermaidIllustration,
   stripGeneratedIllustrationsFromDocument,
 } = require('./contentIllustrationGeneration.cjs');
@@ -3071,6 +3072,7 @@ async function runContentGenerationTask({ aiService, agentService, workspaceStor
   const imageConcurrency = normalizeImageConcurrency(aiConfig.image_model?.concurrency_limit);
   const developerModeEnabled = isDeveloperModeEnabled(aiService);
   const tableRequirement = normalizeTableRequirement(generationOptions.tableRequirement ?? generationOptions.table_requirement);
+  const useAiRedesignForMermaid = Boolean(generationOptions.useAiRedesignForMermaid ?? generationOptions.use_ai_redesign_for_mermaid ?? false);
   let maxTables = maxTablesForRequirement(tableRequirement, leaves.length);
   const referenceKnowledgeDocumentIds = normalizeReferenceDocumentIds(storedPlan);
   const enableConsistencyAudit = Boolean(generationOptions.enableConsistencyAudit ?? generationOptions.enable_consistency_audit ?? true);
@@ -6534,17 +6536,29 @@ workspace 文件说明：
     async function runExecution(execution) {
       const { planItem } = execution;
       if (['success', 'error'].includes(planItem.generation?.status)) return;
-      persistIllustrationGeneration(planItem.item_id, { status: 'running', error: undefined }, `正在生成${planItem.kind === 'ai' ? ' AI' : planItem.kind === 'mermaid' ? ' Mermaid' : ' HTML'} 图片`);
+      const mermaidAiRedesign = planItem.kind === 'mermaid' && useAiRedesignForMermaid;
+      persistIllustrationGeneration(
+        planItem.item_id,
+        { status: 'running', error: undefined },
+        mermaidAiRedesign
+          ? '正在进行 Mermaid AI 图片重绘'
+          : `正在生成${planItem.kind === 'ai' ? ' AI' : planItem.kind === 'mermaid' ? ' Mermaid 代码渲染' : ' HTML'} 图片`,
+      );
       try {
         let result;
         if (planItem.kind === 'ai') {
           result = await generateAiIllustration(aiService, execution);
           logs = [...logs, `AI 配图完成：${planItem.section_ids[0]} ${planItem.title}`];
         } else if (planItem.kind === 'mermaid') {
-          result = await generateMermaidIllustration(aiService, execution, isPauseLikeError);
-          logs = [...logs, result.attempts
-            ? `Mermaid 配图已修复并完成：${planItem.section_ids[0]} ${planItem.title}（修复 ${result.attempts} 轮）`
-            : `Mermaid 配图完成：${planItem.section_ids[0]} ${planItem.title}`];
+          if (mermaidAiRedesign) {
+            result = await generateMermaidAiIllustration(aiService, execution, isPauseLikeError);
+            logs = [...logs, `Mermaid AI 图片重绘完成：${planItem.section_ids[0]} ${planItem.title}${result.attempts > 1 ? `（含 Mermaid 修复 ${result.attempts - 1} 轮）` : ''}`];
+          } else {
+            result = await generateMermaidIllustration(aiService, execution, isPauseLikeError);
+            logs = [...logs, result.attempts
+              ? `Mermaid 代码渲染已修复并完成：${planItem.section_ids[0]} ${planItem.title}（修复 ${result.attempts} 轮）`
+              : `Mermaid 代码渲染完成：${planItem.section_ids[0]} ${planItem.title}`];
+          }
         } else {
           result = await generateHtmlIllustration({
             aiService,
@@ -6596,7 +6610,11 @@ workspace 文件说明：
           title: planItem.title,
           error: compactError(error?.message || error),
         });
-        const kindLabel = planItem.kind === 'ai' ? 'AI' : planItem.kind === 'mermaid' ? 'Mermaid' : 'HTML';
+        const kindLabel = planItem.kind === 'ai'
+          ? 'AI'
+          : planItem.kind === 'mermaid'
+            ? (mermaidAiRedesign ? 'Mermaid AI 图片重绘' : 'Mermaid 代码渲染')
+            : 'HTML';
         logs = [...logs, `${kindLabel} 配图失败：${planItem.section_ids[0]}，${error.message || '生成失败'}，已保留正文。`];
       }
     }

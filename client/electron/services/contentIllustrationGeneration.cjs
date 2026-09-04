@@ -85,6 +85,23 @@ function buildAiImagePrompt(execution) {
 ${execution.reference}`;
 }
 
+function buildMermaidAiImagePrompt(execution, code) {
+  const title = getPlannedTitle(execution);
+  const imageType = String(execution.planItem.image_type || '').trim();
+  return `请将下面已经通过 Mermaid 语法和本地渲染校验的代码重绘为一张专业业务信息图。
+最终图题：${title}
+图表类型：${imageType}
+image_type: ${imageType}
+
+重绘要求：保留 Mermaid 中的步骤顺序、节点语义、判断关系和反馈关系，严格忠实于正文 reference；不得新增流程、角色、设备、数据或承诺，不得改变正文事实。画面应清晰、克制、适合投标技术方案，使用专业业务信息图风格，不要把完整代码或图题作为大段文字绘制在图片中。
+
+已校验 Mermaid 代码：
+${code}
+
+正文 reference：
+${execution.reference}`;
+}
+
 function buildHtmlImagePrompt(execution) {
   const title = getPlannedTitle(execution);
   return `阅读并理解以下内容，用html绘制一张${execution.planItem.image_type}。
@@ -161,10 +178,10 @@ function assertMermaidPreviewCompatible(code) {
 }
 
 // 通过本地渲染校验 Mermaid 是否可出图。
-async function validateMermaidRender(code) {
+async function validateMermaidRender(code, localImageRenderService = getLocalImageRenderService()) {
   const normalized = normalizeMermaidCode(code);
   assertMermaidPreviewCompatible(normalized);
-  const rendered = await getLocalImageRenderService().renderMermaidToPng(normalized);
+  const rendered = await localImageRenderService.renderMermaidToPng(normalized);
   if (!rendered?.buffer?.length) {
     throw new Error('Mermaid 本地渲染失败：未生成有效图片');
   }
@@ -202,13 +219,13 @@ function validateMermaidRepairResult(result) {
   assertSupportedMermaidSyntax(result.code);
 }
 
-async function prepareRenderableMermaid({ aiService, execution, mermaidPlan, isPauseLikeError }) {
+async function prepareRenderableMermaid({ aiService, execution, mermaidPlan, isPauseLikeError, localImageRenderService = getLocalImageRenderService() }) {
   const title = getPlannedTitle(execution);
   let currentPlan = { code: normalizeMermaidCode(mermaidPlan.code) };
   let lastError = null;
   try {
     assertSupportedMermaidDiagramType(execution.planItem.image_type);
-    await validateMermaidRender(currentPlan.code);
+    await validateMermaidRender(currentPlan.code, localImageRenderService);
     return { code: currentPlan.code, attempts: 0 };
   } catch (error) {
     lastError = error;
@@ -226,7 +243,7 @@ async function prepareRenderableMermaid({ aiService, execution, mermaidPlan, isP
         max_retries: 1,
       });
       currentPlan = { ...currentPlan, code: repaired.code };
-      await validateMermaidRender(currentPlan.code);
+      await validateMermaidRender(currentPlan.code, localImageRenderService);
       return { code: currentPlan.code, attempts: attempt };
     } catch (error) {
       if (isPauseLikeError?.(error)) throw error;
@@ -250,7 +267,7 @@ async function generateAiIllustration(aiService, execution) {
 }
 
 // 使用文本模型基于最终正文生成并校验 Mermaid。
-async function generateMermaidIllustrationInternal(aiService, execution, isPauseLikeError) {
+async function generateMermaidCode(aiService, execution, isPauseLikeError, localImageRenderService = getLocalImageRenderService()) {
   const generated = await aiService.collectJsonResponse({
     messages: buildMermaidGenerationMessages(execution),
     logTitle: `Mermaid配图-${execution.planItem.item_id}-${getPlannedTitle(execution)}`,
@@ -259,12 +276,45 @@ async function generateMermaidIllustrationInternal(aiService, execution, isPause
     normalizer: normalizeMermaidGenerationResult,
     validator: validateMermaidGenerationResult,
   });
-  return prepareRenderableMermaid({ aiService, execution, mermaidPlan: generated, isPauseLikeError });
+  return prepareRenderableMermaid({ aiService, execution, mermaidPlan: generated, isPauseLikeError, localImageRenderService });
+}
+
+function resolveMermaidRuntimeArgs(isPauseLikeError, localImageRenderService) {
+  if (isPauseLikeError && typeof isPauseLikeError === 'object' && !localImageRenderService) {
+    if (isPauseLikeError.localImageRenderService) {
+      return {
+        isPauseLikeError: isPauseLikeError.isPauseLikeError,
+        localImageRenderService: isPauseLikeError.localImageRenderService,
+      };
+    }
+    return { isPauseLikeError: undefined, localImageRenderService: isPauseLikeError };
+  }
+  return { isPauseLikeError, localImageRenderService };
 }
 
 // 生成并校验可本地渲染的 Mermaid 配图。
-async function generateMermaidIllustration(aiService, execution, isPauseLikeError) {
-  return generateMermaidIllustrationInternal(aiService, execution, isPauseLikeError);
+async function generateMermaidIllustration(aiService, execution, isPauseLikeError, localImageRenderService) {
+  const runtime = resolveMermaidRuntimeArgs(isPauseLikeError, localImageRenderService);
+  return generateMermaidCode(aiService, execution, runtime.isPauseLikeError, runtime.localImageRenderService);
+}
+
+async function generateMermaidAiIllustration(aiService, execution, isPauseLikeError, localImageRenderService) {
+  const runtime = resolveMermaidRuntimeArgs(isPauseLikeError, localImageRenderService);
+  const mermaid = await generateMermaidIllustration(aiService, execution, runtime.isPauseLikeError, runtime.localImageRenderService);
+  let generated;
+  try {
+    generated = await aiService.generateImage({
+      title: getPlannedTitle(execution),
+      logTitle: `Mermaid AI图片重绘-${execution.planItem.item_id}-${getPlannedTitle(execution)}`,
+      prompt: buildMermaidAiImagePrompt(execution, mermaid.code),
+      style: execution.planItem.image_type,
+    });
+  } catch (error) {
+    if (runtime.isPauseLikeError?.(error)) throw error;
+    throw new Error(`Mermaid AI 图片重绘失败：${error?.message || error}`, { cause: error });
+  }
+  if (!generated?.asset_url) throw new Error('Mermaid AI 图片重绘失败：生图模型未返回本地图片地址');
+  return { asset_url: generated.asset_url, attempts: mermaid.attempts + 1 };
 }
 
 // 本地将 HTML 截取为 PNG，失败按统一策略重试。
@@ -519,12 +569,17 @@ module.exports = {
   HTML_LAYOUT_REPAIR_ATTEMPTS,
   applyGeneratedIllustrationsToDocument,
   buildAiImagePrompt,
+  buildMermaidAiImagePrompt,
   buildHtmlImagePrompt,
   buildIllustrationExecutionContexts,
   generateAiIllustration,
   generateHtmlIllustration,
+  generateMermaidCode,
   generateMermaidIllustration,
+  generateMermaidAiIllustration,
   normalizeHtmlCode,
+  prepareRenderableMermaid,
   stripGeneratedIllustrationsFromDocument,
   validateHtmlCode,
+  validateMermaidRender,
 };
