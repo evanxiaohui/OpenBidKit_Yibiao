@@ -38,3 +38,16 @@
 - [ ] **Step 1: Run** `cd client; npm run build`.
 - [ ] **Step 2: Confirm** exit code 0; treat only existing chunk-size warnings as non-failures.
 - [ ] **Step 3: Review** `git diff` to ensure no historical export-time rewriting or unrelated changes.
+
+### Task 4: Remove duplicate punctuation at the bold boundary
+
+**Files:**
+- Modify: `client/electron/services/contentGenerationTask.punctuation.test.cjs`
+- Modify: `client/electron/services/contentGenerationTask.cjs`
+
+- [ ] **Step 1: Add a failing regression test** asserting `**图属一致性处理：**，各类表格` becomes `**图属一致性处理：** 各类表格`, with equivalent cases for `，,、；;：:` and both `**...**` / `__...__` markers.
+- [ ] **Step 2: Run** `node --test electron/services/contentGenerationTask.punctuation.test.cjs` from `client/` and confirm the new case fails because the current normalizer returns the duplicate boundary punctuation unchanged.
+- [ ] **Step 3: Implement the minimal boundary rule** in `normalizeGeneratedLeadInPunctuation()`: when the bold content ends in `：` or `:`, strip one or more leading `，,、；;：:` delimiters and surrounding whitespace from the following prose, then join the prose with one ASCII space. Preserve standalone bold titles and protected code/table/image lines.
+- [ ] **Step 4: Run the focused test** and confirm every punctuation case passes.
+- [ ] **Step 5: Run regressions** with `node --test electron/services/contentGenerationTask.punctuation.test.cjs electron/services/contentGenerationTask.remoteKnowledge.test.cjs`, then run `node --check electron/services/contentGenerationTask.cjs` and `npm run build` from `client/`.
+- [ ] **Step 6: Review** `git diff --check` and confirm no export-time or historical-content rewriting was added.

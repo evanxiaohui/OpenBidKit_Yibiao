@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mermaid 生图配置草图</title>
+  <style>
+    :root { --ink:#18212f; --muted:#687487; --line:#d9e0ea; --blue:#2166b1; --soft:#f6f9fc; --off:#b8c2cf; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:#f5f7fa; color:var(--ink); font-family:Inter,"Microsoft YaHei",system-ui,sans-serif; }
+    main { max-width:860px; margin:0 auto; padding:42px 24px; }
+    h1 { margin:0; font-size:28px; }
+    .lead { margin:10px 0 26px; color:var(--muted); }
+    .panel { background:#fff; border:1px solid var(--line); border-radius:8px; box-shadow:0 10px 28px rgba(26,45,75,.06); overflow:hidden; }
+    .panel-head { padding:18px 22px; border-bottom:1px solid var(--line); }
+    .panel-head h2 { margin:0; font-size:18px; }
+    .panel-head p { margin:6px 0 0; color:var(--muted); font-size:13px; }
+    .group { padding:22px; border-bottom:1px solid var(--line); }
+    .row { display:flex; align-items:center; justify-content:space-between; gap:20px; }
+    .label strong { display:block; font-size:16px; }
+    .label small { display:block; margin-top:6px; color:var(--muted); line-height:1.5; }
+    .switch { width:48px; height:28px; border:0; border-radius:14px; background:#c2cad5; padding:3px; position:relative; flex:none; }
+    .switch:after { content:""; display:block; width:22px; height:22px; border-radius:50%; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.2); }
+    .switch.on { background:var(--blue); }
+    .switch.on:after { transform:translateX(20px); }
+    .nested { margin:18px 0 0 16px; padding:16px 16px 16px 18px; border-left:3px solid var(--blue); background:var(--soft); }
+    .nested .label strong { font-size:15px; }
+    .nested .label small { max-width:610px; }
+    .limit { margin-top:16px; display:flex; align-items:center; gap:12px; color:var(--muted); font-size:13px; }
+    input { width:76px; padding:8px 10px; border:1px solid var(--line); border-radius:6px; color:var(--ink); background:#fff; font:inherit; }
+    .summary { padding:18px 22px; background:#fbfcfe; }
+    .summary strong { font-size:14px; }
+    .summary p { margin:8px 0 0; color:#4f5d6d; line-height:1.65; font-size:13px; }
+    .state { display:inline-block; margin-left:7px; padding:3px 7px; border:1px solid #b8d1eb; color:var(--blue); background:#eef6ff; border-radius:999px; font-size:11px; vertical-align:1px; }
+    @media (max-width:600px) { main { padding:26px 14px; } .row { align-items:flex-start; } }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Mermaid 生图配置</h1>
+    <p class="lead">默认保持现有 Mermaid 模式；只有明确打开二级开关，才使用 AI 图片重绘。</p>
+    <section class="panel">
+      <header class="panel-head"><h2>正文配图策略</h2><p>控制技术方案正文中流程、层级和职责关系图的生成方式。</p></header>
+      <div class="group">
+        <div class="row">
+          <div class="label"><strong>使用 Mermaid 生图 <span class="state">默认开启</span></strong><small>按正文内容编排 Mermaid 流程图、层级图和职责关系图。</small></div>
+          <button class="switch on" aria-label="使用 Mermaid 生图：开启"></button>
+        </div>
+        <div class="nested">
+          <div class="row">
+            <div class="label"><strong>Mermaid 改用 AI 图片重绘</strong><small>开启后保留 Mermaid 的流程语义和节点关系，由图片模型重新设计为专业业务信息图；关闭时使用原来的 Mermaid 代码渲染模式。</small></div>
+            <button class="switch" aria-label="Mermaid 改用 AI 图片重绘：关闭"></button>
+          </div>
+          <div class="limit"><span>Mermaid 生图上限</span><input type="number" value="5" aria-label="Mermaid 生图上限" /><span>张</span></div>
+        </div>
+      </div>
+      <div class="summary"><strong>当前有效模式：原 Mermaid 模式</strong><p>流程图会生成 Mermaid 代码并在本地渲染为 PNG。打开“Mermaid 改用 AI 图片重绘”后，新的生成任务才切换为 AI 图片；已生成的旧图片不会自动重绘。</p></div>
+    </section>
+  </main>
+</body>
+</html>

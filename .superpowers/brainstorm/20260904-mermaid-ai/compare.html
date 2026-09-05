@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mermaid 与 AI 图片化对比</title>
+  <style>
+    :root { color-scheme: light; --ink:#18212f; --muted:#687487; --line:#d9e0ea; --blue:#2166b1; --blue-2:#dcecff; --lav:#efecff; --lav-line:#9d8be5; --green:#269b78; --orange:#e38b38; --red:#d85f61; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:#f5f7fa; color:var(--ink); font-family:Inter,"Microsoft YaHei",system-ui,sans-serif; }
+    main { max-width:1280px; margin:0 auto; padding:36px 28px 54px; }
+    h1 { margin:0; font-size:30px; letter-spacing:0; }
+    .lead { margin:10px 0 28px; color:var(--muted); font-size:15px; }
+    .compare { display:grid; grid-template-columns:1fr 1fr; gap:22px; align-items:stretch; }
+    .panel { background:#fff; border:1px solid var(--line); border-radius:8px; overflow:hidden; box-shadow:0 10px 28px rgba(26,45,75,.06); }
+    .panel-head { padding:18px 20px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:center; }
+    .panel-head h2 { margin:0; font-size:18px; }
+    .tag { font-size:12px; color:var(--muted); border:1px solid var(--line); padding:5px 9px; border-radius:999px; }
+    .canvas { min-height:580px; padding:28px; display:flex; justify-content:center; align-items:center; }
+
+    /* 当前 Mermaid：强调语法结构，视觉装饰较少。 */
+    .mermaid-flow { width:320px; display:flex; flex-direction:column; align-items:center; gap:12px; }
+    .m-node { width:250px; min-height:58px; display:flex; align-items:center; justify-content:center; text-align:center; padding:12px 16px; border:2px solid var(--lav-line); background:var(--lav); color:#303040; font-size:16px; }
+    .m-arrow { width:2px; height:28px; background:#72777d; position:relative; }
+    .m-arrow:after { content:""; position:absolute; left:-5px; bottom:-1px; border-left:6px solid transparent; border-right:6px solid transparent; border-top:9px solid #72777d; }
+    .loop { width:286px; height:60px; border-right:2px solid #72777d; border-bottom:2px solid #72777d; border-radius:0 0 44px 0; position:relative; margin-top:-4px; }
+    .loop:after { content:""; position:absolute; right:-7px; top:-6px; border-left:8px solid #72777d; border-top:5px solid transparent; border-bottom:5px solid transparent; transform:rotate(-36deg); }
+    .loop-label { color:var(--muted); font-size:12px; margin-top:-2px; }
+
+    /* AI 图片化方向：保留流程关系，但让视觉层次承担更多解释。 */
+    .ai-flow { width:100%; max-width:500px; border:1px solid #cbd8e8; background:#fbfdff; }
+    .ai-title { background:#1d5d9e; color:#fff; padding:14px 18px; font-size:18px; font-weight:700; }
+    .ai-subtitle { padding:10px 18px 4px; color:#58718c; font-size:12px; }
+    .ai-lane { padding:10px 18px 18px; }
+    .ai-step { display:grid; grid-template-columns:42px 1fr 70px; gap:12px; align-items:center; min-height:62px; padding:10px 12px; margin:8px 0; border:1px solid #d7e0eb; background:#fff; }
+    .ai-step-no { width:30px; height:30px; border-radius:50%; display:grid; place-items:center; color:#fff; font-weight:700; background:var(--blue); }
+    .ai-step strong { display:block; font-size:15px; }
+    .ai-step small { display:block; margin-top:4px; color:var(--muted); font-size:11px; }
+    .ai-chip { justify-self:end; font-size:11px; padding:5px 7px; color:#fff; background:var(--green); }
+    .ai-step:nth-child(2) .ai-step-no { background:var(--orange); }
+    .ai-step:nth-child(2) .ai-chip { background:var(--orange); }
+    .ai-step:nth-child(3) .ai-step-no { background:#6d63b5; }
+    .ai-step:nth-child(3) .ai-chip { background:#6d63b5; }
+    .ai-step:nth-child(4) .ai-step-no { background:var(--red); }
+    .ai-step:nth-child(4) .ai-chip { background:var(--red); }
+    .ai-step:nth-child(5) .ai-step-no { background:var(--green); }
+    .ai-step:nth-child(5) .ai-chip { background:var(--green); }
+    .ai-connector { height:16px; border-left:2px solid #4a89c8; margin-left:32px; position:relative; }
+    .ai-connector:after { content:""; position:absolute; left:-6px; bottom:-1px; border-left:5px solid transparent; border-right:5px solid transparent; border-top:7px solid #4a89c8; }
+    .ai-loop { margin:4px 12px 0 54px; padding:10px 12px; border:1px dashed #4a89c8; color:#3c6b94; font-size:12px; text-align:center; background:#eef6ff; }
+    .legend { display:flex; gap:14px; flex-wrap:wrap; padding:0 18px 18px; color:var(--muted); font-size:11px; }
+    .legend span:before { content:""; display:inline-block; width:9px; height:9px; margin-right:5px; background:currentColor; }
+    .legend .b { color:var(--blue); } .legend .o { color:var(--orange); } .legend .g { color:var(--green); }
+    .notes { margin-top:22px; padding:18px 20px; background:#fff; border:1px solid var(--line); border-radius:8px; }
+    .notes h3 { margin:0 0 10px; font-size:16px; }
+    .notes p { margin:7px 0; color:#4f5d6d; font-size:14px; line-height:1.65; }
+    .confirm { border-left:4px solid var(--blue); padding-left:14px; }
+    @media (max-width: 820px) { main { padding:24px 16px 40px; } .compare { grid-template-columns:1fr; } .canvas { min-height:0; padding:22px 14px; } }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>同一流程的两种呈现</h1>
+    <p class="lead">左侧是当前 Mermaid 的默认图形；右侧是“AI 重新设计为图片”的方向草图。流程语义保持不变，视觉表达升级。</p>
+    <section class="compare">
+      <article class="panel">
+        <header class="panel-head"><h2>当前 Mermaid 图片</h2><span class="tag">结构优先</span></header>
+        <div class="canvas">
+          <div class="mermaid-flow">
+            <div class="m-node">问题与风险收集</div><div class="m-arrow"></div>
+            <div class="m-node">复盘分析</div><div class="m-arrow"></div>
+            <div class="m-node">制定改进措施</div><div class="m-arrow"></div>
+            <div class="m-node">整改跟踪与验证</div><div class="m-arrow"></div>
+            <div class="m-node">知识沉淀与策略优化</div>
+            <div class="loop"></div><div class="loop-label">验证结果反馈至问题收集</div>
+          </div>
+        </div>
+      </article>
+      <article class="panel">
+        <header class="panel-head"><h2>AI 重绘后的图片方向</h2><span class="tag">信息图优先</span></header>
+        <div class="canvas">
+          <div class="ai-flow">
+            <div class="ai-title">问题闭环改进机制</div>
+            <div class="ai-subtitle">把流程节点转成可读的业务动作与结果</div>
+            <div class="ai-lane">
+              <div class="ai-step"><div class="ai-step-no">1</div><div><strong>问题与风险收集</strong><small>汇总现场问题、异常与风险信号</small></div><span class="ai-chip">输入</span></div>
+              <div class="ai-connector"></div>
+              <div class="ai-step"><div class="ai-step-no">2</div><div><strong>复盘分析</strong><small>识别原因、影响范围与优先级</small></div><span class="ai-chip">分析</span></div>
+              <div class="ai-connector"></div>
+              <div class="ai-step"><div class="ai-step-no">3</div><div><strong>制定改进措施</strong><small>明确责任、动作、期限与验收标准</small></div><span class="ai-chip">行动</span></div>
+              <div class="ai-connector"></div>
+              <div class="ai-step"><div class="ai-step-no">4</div><div><strong>整改跟踪与验证</strong><small>持续跟踪，验证措施是否真正有效</small></div><span class="ai-chip">验证</span></div>
+              <div class="ai-connector"></div>
+              <div class="ai-step"><div class="ai-step-no">5</div><div><strong>知识沉淀与策略优化</strong><small>形成可复用规则，反哺下一轮执行</small></div><span class="ai-chip">沉淀</span></div>
+              <div class="ai-loop">闭环反馈：验证结果回流到问题收集，触发下一轮改进</div>
+            </div>
+            <div class="legend"><span class="b">流程阶段</span><span class="o">关键动作</span><span class="g">闭环结果</span></div>
+          </div>
+        </div>
+      </article>
+    </section>
+    <section class="notes">
+      <h3>我对你需求的理解</h3>
+      <p class="confirm"><strong>保留什么：</strong>Mermaid 中的流程顺序、判断/反馈关系、节点文字和技术方案事实。</p>
+      <p><strong>改变什么：</strong>不再直接把 Mermaid 代码渲染成默认方框箭头，而是把 Mermaid 作为结构输入，让 AI 结合正文重新组织版式、层级、颜色、图标/装饰和视觉重点，产出一张可插入正文和 Word 的 PNG 图片。</p>
+      <p><strong>关键边界：</strong>AI 可以美化表达，但不能擅自新增流程、责任、设备、数据或承诺；图片中的中文文字需要可读，复杂流程优先改用 HTML 信息图而不是强行生图。</p>
+    </section>
+  </main>
+</body>
+</html>
