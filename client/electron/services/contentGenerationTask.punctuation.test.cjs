@@ -27,6 +27,29 @@ test('inline lead-ins with an internal colon use a comma before following prose'
   );
 });
 
+test('colon-ending lead-ins discard external delimiters before following prose', () => {
+  const delimiters = ['，', ',', '、', '；', ';', '：', ':'];
+  for (const delimiter of delimiters) {
+    assert.equal(
+      normalize(`**图属一致性处理：**${delimiter}各类表格`),
+      '**图属一致性处理：** 各类表格',
+    );
+    assert.equal(
+      normalize(`__图属一致性处理:__ ${delimiter} 各类表格`),
+      '__图属一致性处理:__ 各类表格',
+    );
+  }
+  assert.equal(
+    normalize('**图属一致性处理：** ，，； 各类表格'),
+    '**图属一致性处理：** 各类表格',
+  );
+});
+
+test('colon-ending lead-ins keep trailing delimiters when no prose follows', () => {
+  assert.equal(normalize('**图属一致性处理：**，'), '**图属一致性处理：**，');
+  assert.equal(normalize('**图属一致性处理：** ，； '), '**图属一致性处理：** ，； ');
+});
+
 test('standalone titles keep internal colons while removing terminal punctuation', () => {
   assert.equal(normalize('**第一阶段：前期准备与资料对接。**'), '**第一阶段：前期准备与资料对接**');
 });
@@ -77,6 +100,7 @@ test('chapter content prompt states the lead-in punctuation rules', () => {
   assert.match(prompt, /中文冒号/);
   assert.match(prompt, /中文逗号/);
   assert.match(prompt, /独立成行/);
+  assert.match(prompt, /加粗结束标记后不得再写/);
 });
 
 test('word adjustment prompt states the lead-in punctuation rules', () => {
@@ -96,4 +120,5 @@ test('word adjustment prompt states the lead-in punctuation rules', () => {
   assert.match(prompt, /中文冒号/);
   assert.match(prompt, /中文逗号/);
   assert.match(prompt, /独立成行/);
+  assert.match(prompt, /加粗结束标记后不得再写/);
 });

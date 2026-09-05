@@ -226,6 +226,11 @@ function normalizeGeneratedLeadInPunctuation(content) {
     if (!match) return line;
 
     const [, indent, marker, inner, trailing] = match;
+    const duplicatedBoundary = /^\s*(?:[，,、；;：:]\s*)+([^\s，,、；;：:][\s\S]*)$/.exec(trailing);
+    if (/[：:]\s*$/.test(inner) && duplicatedBoundary) {
+      return `${indent}${marker}${inner}${marker} ${duplicatedBoundary[1]}`;
+    }
+
     const terminal = /([。\.])(\s*)$/.exec(inner);
     if (!terminal) return line;
     const contentWithoutTerminal = inner.slice(0, terminal.index) + terminal[2];
@@ -935,7 +940,7 @@ function buildChapterContentMessages({ chapter, projectOverview, selectedFactsTe
 9. ${tableAllowed ? '表格单元格内如有多项内容，优先使用编号、顿号、分号或短句，不要使用 HTML <br> 标签。' : '如需表达多项参数、职责、流程或措施，请改用分段文字或普通列表，不要用表格模拟。'}
 10. 严禁使用 Markdown 标题语法（#、##、###、####、#####、######），也不要生成与当前章节同级或下级的伪目录标题。
 11. 如需在正文中分层表达，只能使用普通段落、无编号列表、表格或无编号加粗引导语，例如 **实施要点：**。
-12. 行内加粗引导语后面仍有正文时，若引导语内部没有冒号，末尾使用中文冒号；若内部已有中文或英文冒号，末尾使用中文逗号，不得形成两个冒号；独立成行的加粗引导语不得带中文句号或英文句点。
+12. 行内加粗引导语后面仍有正文时，若引导语内部没有冒号，末尾使用中文冒号；若内部已有中文或英文冒号，末尾使用中文逗号，不得形成两个冒号；分隔标点必须写在加粗标记内，加粗结束标记后不得再写逗号、顿号、分号或冒号，直接空一格接正文；独立成行的加粗引导语不得带中文句号或英文句点。
 13. 加粗引导语只允许写简短主题词，禁止使用任何形式的编号。
 14. 只有步骤、流程、时间顺序、操作顺序等连续性非常强的内容，才可以使用有序列表；其他分段一律使用自然段、无编号列表或无编号加粗引导语，禁止使用任何形式的编号。
 15. 直接返回章节内容，不生成标题，不要任何额外说明。
@@ -1215,7 +1220,7 @@ workspace 文件：
 7. 严禁输出 Mermaid、PlantUML、Graphviz、flowchart、graph、sequenceDiagram 等图表代码块、mermaid.ink 链接或图片 Markdown。
 8. restored-content.md 可能包含原方案 Markdown 标题行或编号标题，例如“# 第一章...”“## 第一节...”“### 二、...”“（一）...”，这些只作为章节定位线索，不属于最终正文。
 9. 不要输出章节标题、Markdown 标题、编号标题、解释、总结或过程说明；当前章节标题会由程序统一渲染。
-10. 行内加粗引导语后面仍有正文时，若引导语内部没有冒号，末尾使用中文冒号；若内部已有中文或英文冒号，末尾使用中文逗号，不得形成两个冒号；独立成行的加粗引导语不得带中文句号或英文句点。
+10. 行内加粗引导语后面仍有正文时，若引导语内部没有冒号，末尾使用中文冒号；若内部已有中文或英文冒号，末尾使用中文逗号，不得形成两个冒号；分隔标点必须写在加粗标记内，加粗结束标记后不得再写逗号、顿号、分号或冒号，直接空一格接正文；独立成行的加粗引导语不得带中文句号或英文句点。
  11. chapter-context.md 如包含小节字数目标，应尽量遵守，但保留原方案实质内容的要求优先。
 12. 不要修改业务数据库，程序会读取你的输出文件后自行写回。
 
@@ -2478,7 +2483,7 @@ ${operationRules}
 6. 不改变核心意思，不修改参数、数量、日期、周期和标准，不删除技术路线、职责、流程、风险措施、人员安排、验收要求、售后和服务承诺。
 7. 不新增未提供的品牌、型号、人员、承诺和服务期限。
 8. 不修改图片、Mermaid、代码块、表格结构、列表编号层级和资源路径，不生成 Markdown 标题或伪目录标题。
-9. 行内加粗引导语后面仍有正文时，若引导语内部没有冒号，末尾使用中文冒号；若内部已有中文或英文冒号，末尾使用中文逗号，不得形成两个冒号；独立成行的加粗引导语不得带中文句号或英文句点。
+9. 行内加粗引导语后面仍有正文时，若引导语内部没有冒号，末尾使用中文冒号；若内部已有中文或英文冒号，末尾使用中文逗号，不得形成两个冒号；分隔标点必须写在加粗标记内，加粗结束标记后不得再写逗号、顿号、分号或冒号，直接空一格接正文；独立成行的加粗引导语不得带中文句号或英文句点。
 10. 不把其他目录应承载的内容移动到当前小节。${buildContentFactCompletenessInstruction(globalFactsMode) ? `\n\n${buildContentFactCompletenessInstruction(globalFactsMode)}` : ''}`,
     },
     { role: 'user', content: `当前章节路径：${chapterPath}\n章节描述：${item.description || ''}\n同级章节：${siblings}` },
